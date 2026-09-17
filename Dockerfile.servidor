@@ -1,0 +1,16 @@
+FROM golang:1.26-alpine AS builder
+WORKDIR /app
+COPY go.mod go.sum* ./
+RUN go mod download
+COPY . .
+# Aponta para a pasta do servidor
+RUN CGO_ENABLED=0 GOOS=linux go build -o app-exec ./cmd/servidor
+
+FROM alpine:latest
+RUN apk --no-cache add ca-certificates
+WORKDIR /root/
+# Os dados (JSON) não vão na imagem: o compose monta a pasta cmd/servidor em /root/dados
+# (VAIJUNTO_DADOS). Sem volume, o servidor começa vazio e cria os arquivos em /root.
+COPY --from=builder /app/app-exec .
+EXPOSE 8081
+CMD ["./app-exec"]

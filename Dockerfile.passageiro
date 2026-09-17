@@ -1,0 +1,13 @@
+FROM golang:1.26-alpine AS builder
+WORKDIR /app
+COPY go.mod go.sum* ./
+RUN go mod download
+COPY . .
+# Aponta para a pasta do cliente passageiro
+RUN CGO_ENABLED=0 GOOS=linux go build -o app-exec ./cmd/cliente_passageiro
+
+FROM alpine:latest
+RUN apk --no-cache add ca-certificates
+WORKDIR /root/
+COPY --from=builder /app/app-exec .
+CMD ["./app-exec"]

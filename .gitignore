@@ -1,0 +1,16 @@
+# Dados gerados pelo servidor (têm senhas e dados de teste); são criados sozinhos
+cmd/servidor/*.json
+*.tmp
+
+# Binários gerados por "go build"
+/servidor
+/cliente_motorista
+/cliente_passageiro
+/TesteCarga
+*.exe
+
+# Material da disciplina (enunciado e barema)
+*.pdf
+
+# Anotações pessoais para a apresentação (apague esta linha se quiser publicar)
+docs/GUIA_APRESENTACAO.md

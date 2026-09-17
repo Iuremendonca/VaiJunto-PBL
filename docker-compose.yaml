@@ -1,0 +1,52 @@
+services:
+  vaijunto-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.servidor
+    ports:
+      - "8081:8081"
+    environment:
+      # Pasta dos arquivos JSON. É montada como pasta (e não arquivo por arquivo) porque o
+      # servidor grava de forma atômica: escreve um .tmp e renomeia por cima do original.
+      - VAIJUNTO_DADOS=/root/dados
+      # Fuso usado para comparar os horários das viagens com o horário atual
+      - TZ=America/Bahia
+      # Tempo que as vagas ficam presas no carrinho (padrão 1m).
+      # Ex.: VAIJUNTO_TEMPO_RESERVA=20s docker compose up -d vaijunto-server
+      - VAIJUNTO_TEMPO_RESERVA=${VAIJUNTO_TEMPO_RESERVA:-1m}
+    volumes:
+      - ./cmd/servidor:/root/dados
+  motorista-1:
+    build:
+      context: .
+      dockerfile: Dockerfile.motorista
+    depends_on:
+      - vaijunto-server
+    environment:
+      # Se IP_EXTERNO existir, usa ele. Se não, usa a rede interna.
+      - SERVER_URL=${IP_EXTERNO:-vaijunto-server:8081}
+    stdin_open: true # Mantém o teclado (stdin) aberto
+    tty: true        # Simula uma tela de terminal
+
+  passageiro-1:
+    build:
+      context: .
+      dockerfile: Dockerfile.passageiro
+    depends_on:
+      - vaijunto-server
+    environment:
+      # Se IP_EXTERNO existir, usa ele. Se não, usa a rede interna.
+      - SERVER_URL=${IP_EXTERNO:-vaijunto-server:8081}
+    stdin_open: true # Mantém o teclado (stdin) aberto
+    tty: true        # Simula uma tela de terminal
+
+  # Teste de carga (só sobe quando pedido: docker compose --profile teste run --rm teste-carga)
+  teste-carga:
+    build:
+      context: .
+      dockerfile: Dockerfile.teste
+    profiles: ["teste"]
+    depends_on:
+      - vaijunto-server
+    environment:
+      - SERVER_URL=${IP_EXTERNO:-vaijunto-server:8081}
