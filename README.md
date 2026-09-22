@@ -88,7 +88,6 @@ VAIJUNTO_TEMPO_RESERVA=20s docker compose up -d vaijunto-server
 | **Cliente motorista / passageiro** | Aplicativos de terminal. Não guardam estado de negócio; só mostram o que o servidor responde. |
 | **Teste de carga** (`cmd/TesteCarga`) | Clientes simultâneos que verificam a corretude e medem o tempo de resposta. |
 
-Não há réplicas: um único servidor mantém todo o estado, como pede o enunciado. O estado fica em memória e é gravado em JSON a cada mudança.
 
 ---
 
@@ -121,7 +120,7 @@ Mapas em memória (`internal/estado`):
 | Mapa | Chave → Valor | Guarda |
 |---|---|---|
 | `Usuarios` | id → `Usuario` | cadastros |
-| `Caronas` | id → `*RegistroCarona` (carona + **mutex próprio**) | a fonte da verdade das vagas |
+| `Caronas` | id → `*RegistroCarona` (carona + **mutex próprio**) | Caronas postadas |
 | `Itinerarios` | id → `Itinerario` | passagens confirmadas |
 | `CarrinhosPendentes` | passageiro → `*RegistroCarrinho` (trechos + prazo + **mutex próprio**) | compras em andamento |
 | `Notificacoes` | usuário → `*RegistroNotificacoes` (lista + **mutex próprio**) | central de notificações (`notificacoes.json`) |
