@@ -58,6 +58,9 @@ var perfilExigido = map[string]string{
 }
 
 func main() {
+	if pasta := os.Getenv("VAIJUNTO_DADOS"); pasta != "" {
+		_ = os.MkdirAll(pasta, 0755)
+	}
 
 	errCaronas := estado.CarregarSyncMap(&estado.Caronas, estado.ArquivoCaronas, func(c modelos.Carona) any {
 		return &estado.RegistroCarona{Dados: c}

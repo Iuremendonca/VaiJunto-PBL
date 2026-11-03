@@ -82,13 +82,23 @@ func IniciarAPI(porta string) {
 func carregarParceiros() {
 	Parceiros = nil
 	raw := os.Getenv("EMPRESAS_PARCEIRAS")
-	if raw == "" {
+	if raw != "" {
+		for _, p := range strings.Split(raw, ",") {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				Parceiros = append(Parceiros, p)
+			}
+		}
 		return
 	}
-	for _, p := range strings.Split(raw, ",") {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			Parceiros = append(Parceiros, p)
+
+	// Fallback padrão para desenvolvimento local entre as 3 empresas
+	// se EMPRESAS_PARCEIRAS não for informada explicitamente
+	portasPadrao := []string{"8082", "9082", "10082"}
+	for _, p := range portasPadrao {
+		urlCandidata := "http://localhost:" + p
+		if urlCandidata != MinhaURL && !strings.HasSuffix(MinhaURL, ":"+p) {
+			Parceiros = append(Parceiros, urlCandidata)
 		}
 	}
 }

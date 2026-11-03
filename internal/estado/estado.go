@@ -720,6 +720,10 @@ func SalvarSyncMap[T any](mapaSync *sync.Map, arquivo string, extrair func(valor
 	// Escrita atômica: grava num arquivo temporário e renomeia por cima do original.
 	// Se o servidor cair no meio da gravação, o arquivo antigo continua inteiro.
 	caminho := CaminhoArquivo(arquivo)
+	if err := os.MkdirAll(filepath.Dir(caminho), 0755); err != nil {
+		fmt.Printf("[ERRO] Falha ao criar diretório para %s: %v\n", caminho, err)
+		return err
+	}
 	temporario := caminho + ".tmp"
 	if err := os.WriteFile(temporario, bytesJSON, 0644); err != nil {
 		fmt.Printf("[ERRO] Falha ao gravar %s: %v\n", caminho, err)
