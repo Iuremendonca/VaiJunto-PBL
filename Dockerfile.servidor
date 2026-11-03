@@ -12,5 +12,5 @@ WORKDIR /root/
 # Os dados (JSON) não vão na imagem: o compose monta a pasta cmd/servidor em /root/dados
 # (VAIJUNTO_DADOS). Sem volume, o servidor começa vazio e cria os arquivos em /root.
 COPY --from=builder /app/app-exec .
-EXPOSE 8081
+EXPOSE 8081 8082
 CMD ["./app-exec"]

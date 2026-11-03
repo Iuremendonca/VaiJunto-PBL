@@ -33,6 +33,9 @@ var CidadesValidas = []string{
 	"Alagoinhas",
 	"Aracaju",
 	"Esplanada",
+	"Vitória da Conquista",
+	"Montes Claros",
+	"Minas",
 }
 
 // Devolve o nome oficial da cidade (ignorando maiúsculas e espaços) e se ela é atendida
@@ -77,6 +80,7 @@ type Trecho struct {
 	Passageiros    []string `json:"passageiros"`
 	HorarioSaida   string   `json:"horario_saida"` // YYYY-MM-DD HH:MM
 	HorarioChegada string   `json:"horario_chegada"`
+	URL_Empresa    string   `json:"url_empresa"`
 }
 
 // A viagem gerida pelo motorista

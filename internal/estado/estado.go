@@ -33,6 +33,16 @@ type RegistroCarrinho struct {
 // Tempo que as vagas ficam presas no carrinho após o último trecho adicionado
 var TempoReservaCarrinho = 1 * time.Minute
 
+// Hooks e configurações para o Consórcio Distribuído
+var (
+	MinhaURL                  string
+	EmpresasParceiras         []string
+	BuscarTrechosRemotosFunc  func(urlEmpresa, dataInicio, dataFim string) ([]modelos.Trecho, error)
+	PrepararReservaRemotaFunc func(urlEmpresa, caronaID, trechoID string, relogio uint64, idOrigem string) bool
+	EfetivarReservaRemotaFunc func(urlEmpresa, caronaID, trechoID, passageiroID string) bool
+	CancelarReservaRemotaFunc func(urlEmpresa, caronaID, trechoID string) bool
+)
+
 var Itinerarios sync.Map //Armazena as viagens confirmadas
 var Caronas sync.Map     //armazena as caronas criadas
 
@@ -372,12 +382,23 @@ func EfetivarItinerario(passageiroID string) error {
 		Trechos:      trechosEscolhidos,
 	}
 
-	// Trava todas as caronas da viagem de uma vez. Assim o itinerário e as listas de
-	// embarque mudam juntos, e um cancelamento do motorista nunca vê metade da compra.
+	// Confirma os trechos remotos nas empresas parceiras (Fase 2 do 2PC - Commit)
+	for _, t := range trechosEscolhidos {
+		if t.URL_Empresa != "" && t.URL_Empresa != MinhaURL {
+			if EfetivarReservaRemotaFunc != nil {
+				EfetivarReservaRemotaFunc(t.URL_Empresa, t.CaronaID, t.ID, passageiroID)
+			}
+		}
+	}
+
+	// Trava todas as caronas locais da viagem de uma vez.
 	registros := travarCaronas(trechosEscolhidos)
 
 	caronaCancelada := false
 	for _, t := range trechosEscolhidos {
+		if t.URL_Empresa != "" && t.URL_Empresa != MinhaURL {
+			continue // Trecho remoto já foi confirmado com a empresa dona
+		}
 		reg, existe := registros[t.CaronaID]
 		if !existe || reg.Cancelada {
 			caronaCancelada = true
@@ -386,8 +407,11 @@ func EfetivarItinerario(passageiroID string) error {
 	}
 
 	if !caronaCancelada {
-		// ATUALIZA O MOTORISTA: Coloca o passageiro na lista de embarque
+		// ATUALIZA O MOTORISTA: Coloca o passageiro na lista de embarque local
 		for _, tReq := range trechosEscolhidos {
+			if tReq.URL_Empresa != "" && tReq.URL_Empresa != MinhaURL {
+				continue
+			}
 			reg := registros[tReq.CaronaID]
 			for i, tOficial := range reg.Dados.Trechos {
 				if tOficial.ID == tReq.ID {
@@ -412,8 +436,11 @@ func EfetivarItinerario(passageiroID string) error {
 	// 7. PERSISTE TUDO NO DISCO (fora dos cadeados das caronas, senão dá deadlock)
 	salvarCaronasEItinerarios()
 
-	// 8. Avisa cada motorista que ganhou um passageiro
+	// 8. Avisa cada motorista local que ganhou um passageiro
 	for _, pedaco := range pedacosPorCarona(trechosEscolhidos) {
+		if pedaco[0].URL_Empresa != "" && pedaco[0].URL_Empresa != MinhaURL {
+			continue // Motorista parceiro é notificado no servidor dele
+		}
 		notificar(pedaco[0].MotoristaID, "%s confirmou uma vaga na sua carona: %s.",
 			nomeUsuario(passageiroID), descreverTrechos(pedaco))
 	}
@@ -439,6 +466,23 @@ func ReservarVagasTemporariamente(passageiroID string, trechosEscolhidos []model
 			return falha(protocolo.StatusRequisicaoInvalida, "o mesmo trecho foi informado duas vezes")
 		}
 		pedidos[tReq.ID] = true
+
+		// Se o trecho pertence a uma empresa parceira (Remoto)
+		if tReq.URL_Empresa != "" && tReq.URL_Empresa != MinhaURL {
+			if PrepararReservaRemotaFunc == nil {
+				DesfazerReserva(vagasDescontadas)
+				return falha(protocolo.StatusErroInterno, "integração com parceiro indisponível")
+			}
+			ok := PrepararReservaRemotaFunc(tReq.URL_Empresa, tReq.CaronaID, tReq.ID, 0, "")
+			if !ok {
+				DesfazerReserva(vagasDescontadas)
+				return falha(protocolo.StatusConflito, "alguém foi mais rápido! Vagas esgotadas para o trecho %s -> %s na empresa parceira", tReq.Origem, tReq.Destino)
+			}
+			oficial := tReq
+			oficial.Passageiros = nil
+			vagasDescontadas = append(vagasDescontadas, oficial)
+			continue
+		}
 
 		valor, existe := Caronas.Load(tReq.CaronaID)
 		if !existe {
@@ -471,6 +515,7 @@ func ReservarVagasTemporariamente(passageiroID string, trechosEscolhidos []model
 				default:
 					reg.Dados.Trechos[i].VagasLivres-- // DESCONTA A VAGA NA HORA
 					oficial = reg.Dados.Trechos[i]
+					oficial.URL_Empresa = MinhaURL
 				}
 				break
 			}
@@ -558,9 +603,15 @@ func continuarCarrinho(passageiroID string, trechos []modelos.Trecho) error {
 	return nil
 }
 
-// Devolve as vagas para o sistema
+// Devolve as vagas para o sistema (locais e remotas)
 func DesfazerReserva(trechos []modelos.Trecho) {
 	for _, tReq := range trechos {
+		if tReq.URL_Empresa != "" && tReq.URL_Empresa != MinhaURL {
+			if CancelarReservaRemotaFunc != nil {
+				CancelarReservaRemotaFunc(tReq.URL_Empresa, tReq.CaronaID, tReq.ID)
+			}
+			continue
+		}
 		valor, existe := Caronas.Load(tReq.CaronaID)
 		if existe {
 			reg := valor.(*RegistroCarona)
@@ -803,6 +854,12 @@ func cancelarItinerario(itinerarioID string) (modelos.Itinerario, bool) {
 	}
 
 	for _, t := range itinerario.Trechos {
+		if t.URL_Empresa != "" && t.URL_Empresa != MinhaURL {
+			if CancelarReservaRemotaFunc != nil {
+				CancelarReservaRemotaFunc(t.URL_Empresa, t.CaronaID, t.ID)
+			}
+			continue
+		}
 		reg, existe := registros[t.CaronaID]
 		if !existe || reg.Cancelada {
 			continue // carona do motorista que cancelou: não há vaga para devolver
@@ -958,3 +1015,202 @@ func ValidarLogin(id string, senha string, tipoEsperado string) (modelos.Usuario
 	usuario.Senha = ""
 	return usuario, nil
 }
+
+// =========================================================================
+// OPERAÇÕES DO CONSÓRCIO (Two-Phase Commit, Lamport e Descoberta de Trechos)
+// =========================================================================
+
+// Estrutura que guarda uma reserva temporária no servidor parceiro (Lease / TTL)
+type ReservaPendenteRemota struct {
+	CaronaID      string
+	TrechoID      string
+	RelogioLogico uint64
+	IDOrigem      string
+	Timer         *time.Timer
+}
+
+var reservasPendentesRemotas sync.Map // chave: caronaID + "#" + trechoID
+
+// PrepararVaga tenta reservar 1 assento (Fase 1 do 2PC).
+// Suporta desempate por Ordem Total de Lamport e TTL de expiração autônoma.
+func PrepararVaga(caronaID, trechoID string, relogio uint64, idOrigem string) bool {
+	valor, existe := Caronas.Load(caronaID)
+	if !existe {
+		return false
+	}
+	reg := valor.(*RegistroCarona)
+	reg.Lock()
+	defer reg.Unlock()
+
+	if reg.Cancelada {
+		return false
+	}
+
+	chave := caronaID + "#" + trechoID
+
+	// IDEMPOTÊNCIA: Se a mesma requisição (mesma origem e relógio) for reenviada por timeout de rede
+	if pendVal, pendExiste := reservasPendentesRemotas.Load(chave); pendExiste {
+		pend := pendVal.(*ReservaPendenteRemota)
+		if pend.IDOrigem == idOrigem && pend.RelogioLogico == relogio && relogio > 0 {
+			// Já foi pré-reservado por este mesmo pedido: renova timer e confirma sem descontar vaga dupla
+			pend.Timer.Reset(TempoReservaCarrinho + 15*time.Second)
+			return true
+		}
+	}
+
+	for i, t := range reg.Dados.Trechos {
+		if t.ID == trechoID {
+			if t.HorarioSaida <= agora() {
+				return false
+			}
+
+			// Se ainda há vaga livre
+			if t.VagasLivres > 0 {
+				reg.Dados.Trechos[i].VagasLivres--
+
+				// Inicia o cronômetro autônomo (TTL) no servidor parceiro (Lease / Tolerância a falhas)
+				ttl := TempoReservaCarrinho + 15*time.Second
+				timer := time.AfterFunc(ttl, func() {
+					fmt.Printf("[TTL PARCEIRO] Vaga temporária da Carona %s, Trecho %s expirou sem confirmação. Liberando vaga...\n",
+						caronaID, trechoID)
+					CancelarVaga(caronaID, trechoID)
+				})
+
+				reservasPendentesRemotas.Store(chave, &ReservaPendenteRemota{
+					CaronaID:      caronaID,
+					TrechoID:      trechoID,
+					RelogioLogico: relogio,
+					IDOrigem:      idOrigem,
+					Timer:         timer,
+				})
+				return true
+			}
+
+			// Se a vaga está esgotada, verifica se a última vaga está pré-reservada e aplica Relógio de Lamport
+			if pendVal, pendExiste := reservasPendentesRemotas.Load(chave); pendExiste && relogio > 0 {
+				pend := pendVal.(*ReservaPendenteRemota)
+				// Precedência de Lamport: menor timestamp ganha; se igual, menor ID de servidor ganha
+				if relogio < pend.RelogioLogico || (relogio == pend.RelogioLogico && idOrigem < pend.IDOrigem) {
+					fmt.Printf("[LAMPORT-PREEMPÇÃO] Vaga transferida: requisição anterior (L=%d, ID=%s) preemptada por nova (L=%d, ID=%s)\n",
+						pend.RelogioLogico, pend.IDOrigem, relogio, idOrigem)
+					pend.Timer.Stop()
+
+					ttl := TempoReservaCarrinho + 15*time.Second
+					novoTimer := time.AfterFunc(ttl, func() {
+						CancelarVaga(caronaID, trechoID)
+					})
+
+					reservasPendentesRemotas.Store(chave, &ReservaPendenteRemota{
+						CaronaID:      caronaID,
+						TrechoID:      trechoID,
+						RelogioLogico: relogio,
+						IDOrigem:      idOrigem,
+						Timer:         novoTimer,
+					})
+					return true
+				}
+			}
+
+			return false
+		}
+	}
+	return false
+}
+
+// CancelarVaga desfaz a reserva de 1 assento (Rollback do 2PC).
+func CancelarVaga(caronaID, trechoID string) bool {
+	chave := caronaID + "#" + trechoID
+	if val, ok := reservasPendentesRemotas.LoadAndDelete(chave); ok {
+		val.(*ReservaPendenteRemota).Timer.Stop()
+	}
+
+	valor, existe := Caronas.Load(caronaID)
+	if !existe {
+		return false
+	}
+	reg := valor.(*RegistroCarona)
+	reg.Lock()
+	defer reg.Unlock()
+
+	for i, t := range reg.Dados.Trechos {
+		if t.ID == trechoID {
+			reg.Dados.Trechos[i].VagasLivres++
+			return true
+		}
+	}
+	return false
+}
+
+// EfetivarVaga confirma a vaga definitivamente, adicionando o passageiro (Fase 2 do 2PC - Commit).
+func EfetivarVaga(caronaID, trechoID, passageiroID string) bool {
+	chave := caronaID + "#" + trechoID
+	if val, ok := reservasPendentesRemotas.LoadAndDelete(chave); ok {
+		val.(*ReservaPendenteRemota).Timer.Stop()
+	}
+
+	valor, existe := Caronas.Load(caronaID)
+	if !existe {
+		return false
+	}
+	reg := valor.(*RegistroCarona)
+	reg.Lock()
+
+	if reg.Cancelada {
+		reg.Unlock()
+		return false
+	}
+	achou := false
+	for i, t := range reg.Dados.Trechos {
+		if t.ID == trechoID {
+			// IDEMPOTÊNCIA: Se o passageiro já foi confirmado nesta carona por requisição duplicada
+			for _, p := range t.Passageiros {
+				if p == passageiroID {
+					reg.Unlock()
+					return true
+				}
+			}
+			reg.Dados.Trechos[i].Passageiros = append(reg.Dados.Trechos[i].Passageiros, passageiroID)
+			achou = true
+			break
+		}
+	}
+	reg.Unlock()
+
+	if achou {
+		go salvarCaronasEItinerarios()
+	}
+	return achou
+}
+
+// ListarTrechosDisponiveisLocais retorna todos os trechos locais que possuem vagas e horário futuro (com filtro de datas)
+func ListarTrechosDisponiveisLocais(urlEmpresa, dataInicio, dataFim string) []modelos.Trecho {
+	var disponiveis []modelos.Trecho
+	limite := agora()
+
+	Caronas.Range(func(_, value any) bool {
+		reg := value.(*RegistroCarona)
+		reg.Lock()
+		if !reg.Cancelada {
+			for _, t := range reg.Dados.Trechos {
+				if t.VagasLivres > 0 && t.HorarioSaida >= limite && dataHoraValida(t.HorarioSaida) && dataHoraValida(t.HorarioChegada) {
+					tData := strings.Split(t.HorarioSaida, " ")[0]
+					if dataInicio != "" && tData < dataInicio {
+						continue
+					}
+					if dataFim != "" && tData > dataFim {
+						continue
+					}
+
+					copia := t
+					copia.Passageiros = nil
+					copia.URL_Empresa = urlEmpresa
+					disponiveis = append(disponiveis, copia)
+				}
+			}
+		}
+		reg.Unlock()
+		return true
+	})
+	return disponiveis
+}
+

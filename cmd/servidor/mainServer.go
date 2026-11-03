@@ -1,6 +1,7 @@
 package main
 
 import (
+	"VaiJunto/internal/consorcio"
 	"VaiJunto/internal/estado"
 	"VaiJunto/internal/modelos"
 	"VaiJunto/internal/protocolo"
@@ -90,6 +91,13 @@ func main() {
 		}
 	}
 	fmt.Printf("[SISTEMA] Tempo de reserva do carrinho: %v\n", estado.TempoReservaCarrinho)
+
+	//NOVA PORTA PARA A API
+	portaREST := os.Getenv("PORTA_REST")
+	if portaREST == "" {
+		portaREST = "8082"
+	}
+	go consorcio.IniciarAPI(portaREST)
 
 	porta := os.Getenv("PORTA")
 	if porta == "" {

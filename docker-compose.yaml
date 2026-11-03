@@ -1,52 +1,106 @@
 services:
-  vaijunto-server:
+  # =========================================================================
+  # EMPRESA A (Sede / Porta TCP 8081 / REST 8082)
+  # =========================================================================
+  servidor-empresa-a:
     build:
       context: .
       dockerfile: Dockerfile.servidor
+    container_name: servidor-empresa-a
     ports:
       - "8081:8081"
+      - "8082:8082"
     environment:
-      # Pasta dos arquivos JSON. É montada como pasta (e não arquivo por arquivo) porque o
-      # servidor grava de forma atômica: escreve um .tmp e renomeia por cima do original.
+      - PORTA=8081
+      - PORTA_REST=8082
+      - URL_EMPRESA=http://servidor-empresa-a:8082
+      - EMPRESAS_PARCEIRAS=http://servidor-empresa-b:9082,http://servidor-empresa-c:10082
+      - ID_EMPRESA=empresa_a
       - VAIJUNTO_DADOS=/root/dados
-      # Fuso usado para comparar os horários das viagens com o horário atual
       - TZ=America/Bahia
-      # Tempo que as vagas ficam presas no carrinho (padrão 1m).
-      # Ex.: VAIJUNTO_TEMPO_RESERVA=20s docker compose up -d vaijunto-server
       - VAIJUNTO_TEMPO_RESERVA=${VAIJUNTO_TEMPO_RESERVA:-1m}
     volumes:
-      - ./cmd/servidor:/root/dados
+      - ./cmd/servidor/dados_a:/root/dados
+
+  # =========================================================================
+  # EMPRESA B (Porta TCP 9081 / REST 9082)
+  # =========================================================================
+  servidor-empresa-b:
+    build:
+      context: .
+      dockerfile: Dockerfile.servidor
+    container_name: servidor-empresa-b
+    ports:
+      - "9081:9081"
+      - "9082:9082"
+    environment:
+      - PORTA=9081
+      - PORTA_REST=9082
+      - URL_EMPRESA=http://servidor-empresa-b:9082
+      - EMPRESAS_PARCEIRAS=http://servidor-empresa-a:8082,http://servidor-empresa-c:10082
+      - ID_EMPRESA=empresa_b
+      - VAIJUNTO_DADOS=/root/dados
+      - TZ=America/Bahia
+      - VAIJUNTO_TEMPO_RESERVA=${VAIJUNTO_TEMPO_RESERVA:-1m}
+    volumes:
+      - ./cmd/servidor/dados_b:/root/dados
+
+  # =========================================================================
+  # EMPRESA C (Porta TCP 10081 / REST 10082)
+  # =========================================================================
+  servidor-empresa-c:
+    build:
+      context: .
+      dockerfile: Dockerfile.servidor
+    container_name: servidor-empresa-c
+    ports:
+      - "10081:10081"
+      - "10082:10082"
+    environment:
+      - PORTA=10081
+      - PORTA_REST=10082
+      - URL_EMPRESA=http://servidor-empresa-c:10082
+      - EMPRESAS_PARCEIRAS=http://servidor-empresa-a:8082,http://servidor-empresa-b:9082
+      - ID_EMPRESA=empresa_c
+      - VAIJUNTO_DADOS=/root/dados
+      - TZ=America/Bahia
+      - VAIJUNTO_TEMPO_RESERVA=${VAIJUNTO_TEMPO_RESERVA:-1m}
+    volumes:
+      - ./cmd/servidor/dados_c:/root/dados
+
+  # =========================================================================
+  # CLIENTES DE TESTE
+  # =========================================================================
   motorista-1:
     build:
       context: .
       dockerfile: Dockerfile.motorista
     depends_on:
-      - vaijunto-server
+      - servidor-empresa-a
     environment:
-      # Se IP_EXTERNO existir, usa ele. Se não, usa a rede interna.
-      - SERVER_URL=${IP_EXTERNO:-vaijunto-server:8081}
-    stdin_open: true # Mantém o teclado (stdin) aberto
-    tty: true        # Simula uma tela de terminal
+      - SERVER_URL=${IP_EXTERNO:-servidor-empresa-a:8081}
+    stdin_open: true
+    tty: true
 
   passageiro-1:
     build:
       context: .
       dockerfile: Dockerfile.passageiro
     depends_on:
-      - vaijunto-server
+      - servidor-empresa-a
     environment:
-      # Se IP_EXTERNO existir, usa ele. Se não, usa a rede interna.
-      - SERVER_URL=${IP_EXTERNO:-vaijunto-server:8081}
-    stdin_open: true # Mantém o teclado (stdin) aberto
-    tty: true        # Simula uma tela de terminal
+      - SERVER_URL=${IP_EXTERNO:-servidor-empresa-a:8081}
+    stdin_open: true
+    tty: true
 
-  # Teste de carga (só sobe quando pedido: docker compose --profile teste run --rm teste-carga)
   teste-carga:
     build:
       context: .
       dockerfile: Dockerfile.teste
     profiles: ["teste"]
     depends_on:
-      - vaijunto-server
+      - servidor-empresa-a
+      - servidor-empresa-b
+      - servidor-empresa-c
     environment:
-      - SERVER_URL=${IP_EXTERNO:-vaijunto-server:8081}
+      - SERVER_URL=${IP_EXTERNO:-servidor-empresa-a:8081}
