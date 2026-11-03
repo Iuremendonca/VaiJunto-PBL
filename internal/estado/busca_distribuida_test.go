@@ -77,7 +77,7 @@ func TestBuscaDistribuidaEReservaMultiEmpresas(t *testing.T) {
 	}
 
 	efetivadoRemoto := false
-	EfetivarReservaRemotaFunc = func(urlEmpresa, caronaID, trechoID, passageiroID string) bool {
+	EfetivarReservaRemotaFunc = func(urlEmpresa, caronaID, trechoID, passageiroID string, extras ...string) bool {
 		if urlEmpresa == "http://servidor-b:8082" && trechoID == trechoRemotoID {
 			efetivadoRemoto = true
 			return true

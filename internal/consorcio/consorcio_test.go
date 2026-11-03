@@ -119,5 +119,45 @@ func TestComunicacaoEntreServidores(t *testing.T) {
 		t.Errorf("Passageiro não foi registrado na lista de embarque após efetivar")
 	}
 	reg.Unlock()
+
+	// 6. Testar Cancelar Viagem pelo Passageiro Remoto: Devolve vaga, remove da lista de embarque e notifica motorista
+	okCanc2 := CancelarReservaRemota(urlTeste, trechoTeste, "passageiro_teste", "Carlos")
+	if !okCanc2 {
+		t.Fatalf("Falha ao cancelar reserva remota com passageiro")
+	}
+
+	reg.Lock()
+	if reg.Dados.Trechos[0].VagasLivres != 3 {
+		t.Errorf("Vagas livres deveriam voltar para 3 após cancelamento, obteve %d", reg.Dados.Trechos[0].VagasLivres)
+	}
+	if len(reg.Dados.Trechos[0].Passageiros) != 0 {
+		t.Errorf("Passageiro deveria ter sido removido da lista de embarque, mas restaram: %v", reg.Dados.Trechos[0].Passageiros)
+	}
+	reg.Unlock()
+
+	naoLidas := estado.ContarNotificacoesNaoLidas("mot_1")
+	if naoLidas == 0 {
+		t.Errorf("Motorista mot_1 deveria ter notificações não lidas após confirmação e cancelamento")
+	}
+	notifs := estado.AbrirNotificacoes("mot_1")
+	if len(notifs) == 0 {
+		t.Fatalf("Nenhuma notificação encontrada para mot_1")
+	}
+	if !contains(notifs[0].Mensagem, "Carlos") || !contains(notifs[0].Mensagem, "cancelou a reserva") {
+		t.Errorf("Mensagem de notificação inesperada: %s", notifs[0].Mensagem)
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(substr) == 0 || stringContains(s, substr))
+}
+
+func stringContains(s, substr string) bool {
+	for i := 0; i+len(substr) <= len(s); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }
 

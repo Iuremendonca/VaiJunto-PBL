@@ -39,8 +39,8 @@ var (
 	EmpresasParceiras         []string
 	BuscarTrechosRemotosFunc  func(urlEmpresa, dataInicio, dataFim string) ([]modelos.Trecho, error)
 	PrepararReservaRemotaFunc func(urlEmpresa, caronaID, trechoID string, relogio uint64, idOrigem string) bool
-	EfetivarReservaRemotaFunc func(urlEmpresa, caronaID, trechoID, passageiroID string) bool
-	CancelarReservaRemotaFunc       func(urlEmpresa, caronaID, trechoID string) bool
+	EfetivarReservaRemotaFunc func(urlEmpresa, caronaID, trechoID, passageiroID string, extras ...string) bool
+	CancelarReservaRemotaFunc func(urlEmpresa, caronaID, trechoID string, extras ...string) bool
 	NotificarCancelamentoCaronaFunc func(urlEmpresa, caronaID, motoristaID string) bool
 )
 
@@ -387,7 +387,8 @@ func EfetivarItinerario(passageiroID string) error {
 	for _, t := range trechosEscolhidos {
 		if t.URL_Empresa != "" && t.URL_Empresa != MinhaURL {
 			if EfetivarReservaRemotaFunc != nil {
-				EfetivarReservaRemotaFunc(t.URL_Empresa, t.CaronaID, t.ID, passageiroID)
+				nome := nomeUsuario(passageiroID)
+				EfetivarReservaRemotaFunc(t.URL_Empresa, t.CaronaID, t.ID, passageiroID, nome)
 			}
 		}
 	}
@@ -857,7 +858,8 @@ func cancelarItinerario(itinerarioID string) (modelos.Itinerario, bool) {
 	for _, t := range itinerario.Trechos {
 		if t.URL_Empresa != "" && t.URL_Empresa != MinhaURL {
 			if CancelarReservaRemotaFunc != nil {
-				CancelarReservaRemotaFunc(t.URL_Empresa, t.CaronaID, t.ID)
+				nome := nomeUsuario(itinerario.PassageiroID)
+				CancelarReservaRemotaFunc(t.URL_Empresa, t.CaronaID, t.ID, itinerario.PassageiroID, nome)
 			}
 			continue
 		}
@@ -893,8 +895,11 @@ func CancelarItinerarioPassageiro(passageiroID, itinerarioID string) error {
 
 	salvarCaronasEItinerarios()
 
-	// Avisa cada motorista que perdeu o passageiro
+	// Avisa cada motorista local que perdeu o passageiro (motoristas parceiros são avisados remotamente)
 	for _, pedaco := range pedacosPorCarona(itinerario.Trechos) {
+		if pedaco[0].URL_Empresa != "" && pedaco[0].URL_Empresa != MinhaURL {
+			continue // Motorista parceiro é notificado no servidor dele pelo CancelarVaga remoto
+		}
 		notificar(pedaco[0].MotoristaID, "%s cancelou a reserva na sua carona: %s. A vaga voltou a ficar disponível.",
 			nomeUsuario(passageiroID), descreverTrechos(pedaco))
 	}
@@ -1014,6 +1019,9 @@ func avisarCancelamentoEmCascata(itinerario modelos.Itinerario, motoristaID, car
 	for _, pedaco := range pedacosPorCarona(itinerario.Trechos) {
 		if pedaco[0].CaronaID == caronaID {
 			continue
+		}
+		if pedaco[0].URL_Empresa != "" && pedaco[0].URL_Empresa != MinhaURL {
+			continue // Motorista parceiro é notificado no servidor dele
 		}
 		notificar(pedaco[0].MotoristaID,
 			"%s saiu da sua carona (%s) porque outra carona da mesma viagem foi cancelada. A vaga voltou a ficar disponível.",
@@ -1159,8 +1167,17 @@ func PrepararVaga(caronaID, trechoID string, relogio uint64, idOrigem string) bo
 	return false
 }
 
-// CancelarVaga desfaz a reserva de 1 assento (Rollback do 2PC).
-func CancelarVaga(caronaID, trechoID string) bool {
+// CancelarVaga desfaz a reserva de 1 assento (Rollback do 2PC ou cancelamento pelo passageiro).
+func CancelarVaga(caronaID, trechoID string, extras ...string) bool {
+	var passID string
+	var passNome string
+	if len(extras) > 0 {
+		passID = extras[0]
+	}
+	if len(extras) > 1 {
+		passNome = extras[1]
+	}
+
 	chave := caronaID + "#" + trechoID
 	if val, ok := reservasPendentesRemotas.LoadAndDelete(chave); ok {
 		val.(*ReservaPendenteRemota).Timer.Stop()
@@ -1177,6 +1194,19 @@ func CancelarVaga(caronaID, trechoID string) bool {
 	for i, t := range reg.Dados.Trechos {
 		if t.ID == trechoID {
 			reg.Dados.Trechos[i].VagasLivres++
+			if passID != "" {
+				reg.Dados.Trechos[i].Passageiros = removerPassageiro(reg.Dados.Trechos[i].Passageiros, passID)
+				nomeExibir := passID
+				if passNome != "" {
+					nomeExibir = passNome
+				} else if n := nomeUsuario(passID); n != "" {
+					nomeExibir = n
+				}
+				notificar(reg.Dados.MotoristaID, "%s cancelou a reserva na sua carona: %s. A vaga voltou a ficar disponível.",
+					nomeExibir, descreverTrechos([]modelos.Trecho{t}))
+				salvarNotificacoes()
+			}
+			go salvarCaronasEItinerarios()
 			return true
 		}
 	}
@@ -1184,7 +1214,12 @@ func CancelarVaga(caronaID, trechoID string) bool {
 }
 
 // EfetivarVaga confirma a vaga definitivamente, adicionando o passageiro (Fase 2 do 2PC - Commit).
-func EfetivarVaga(caronaID, trechoID, passageiroID string) bool {
+func EfetivarVaga(caronaID, trechoID, passageiroID string, extras ...string) bool {
+	var passNome string
+	if len(extras) > 0 {
+		passNome = extras[0]
+	}
+
 	chave := caronaID + "#" + trechoID
 	if val, ok := reservasPendentesRemotas.LoadAndDelete(chave); ok {
 		val.(*ReservaPendenteRemota).Timer.Stop()
@@ -1213,6 +1248,17 @@ func EfetivarVaga(caronaID, trechoID, passageiroID string) bool {
 			}
 			reg.Dados.Trechos[i].Passageiros = append(reg.Dados.Trechos[i].Passageiros, passageiroID)
 			achou = true
+
+			nomeExibir := passageiroID
+			if passNome != "" {
+				nomeExibir = passNome
+			} else if n := nomeUsuario(passageiroID); n != "" {
+				nomeExibir = n
+			}
+			// Notifica o motorista parceiro sobre o novo passageiro
+			notificar(reg.Dados.MotoristaID, "%s confirmou uma vaga na sua carona: %s.",
+				nomeExibir, descreverTrechos([]modelos.Trecho{t}))
+			salvarNotificacoes()
 			break
 		}
 	}

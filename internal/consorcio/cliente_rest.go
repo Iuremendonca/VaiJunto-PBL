@@ -111,41 +111,60 @@ func PrepararReservaRemotaPorID(urlEmpresa, caronaID, trechoID string, extras ..
 }
 
 // EfetivarReservaRemota executa a Fase 2 (Commit) do 2PC em uma empresa parceira recebendo um Trecho
-func EfetivarReservaRemota(urlEmpresa string, trecho modelos.Trecho, passageiroID string) bool {
-	return EfetivarReservaRemotaPorID(urlEmpresa, trecho.CaronaID, trecho.ID, passageiroID)
+func EfetivarReservaRemota(urlEmpresa string, trecho modelos.Trecho, passageiroID string, extras ...string) bool {
+	return EfetivarReservaRemotaPorID(urlEmpresa, trecho.CaronaID, trecho.ID, passageiroID, extras...)
 }
 
-// EfetivarReservaRemotaPorID executa a Fase 2 (Commit) do 2PC passando os IDs diretamente
-func EfetivarReservaRemotaPorID(urlEmpresa, caronaID, trechoID, passageiroID string) bool {
+// EfetivarReservaRemotaPorID executa a Fase 2 (Commit) do 2PC passando os IDs diretamente e nome do passageiro se houver
+func EfetivarReservaRemotaPorID(urlEmpresa, caronaID, trechoID, passageiroID string, extras ...string) bool {
 	urlEmpresa = strings.TrimRight(urlEmpresa, "/")
 	endpoint := urlEmpresa + "/api/reservas/efetivar"
 
-	payload := PedidoReserva{
-		CaronaID:     caronaID,
-		TrechoID:     trechoID,
-		PassageiroID: passageiroID,
+	var passNome string
+	if len(extras) > 0 {
+		passNome = extras[0]
 	}
-	fmt.Printf("[CLIENTE-REST 2PC] Enviando Fase 2 (Commit/Efetivar) para %s [Carona: %s, Trecho: %s, Passageiro: %s]...\n", urlEmpresa, caronaID, trechoID, passageiroID)
+
+	payload := PedidoReserva{
+		CaronaID:       caronaID,
+		TrechoID:       trechoID,
+		PassageiroID:   passageiroID,
+		PassageiroNome: passNome,
+	}
+	fmt.Printf("[CLIENTE-REST 2PC] Enviando Fase 2 (Commit/Efetivar) para %s [Carona: %s, Trecho: %s, Passageiro: %s (%s)]...\n",
+		urlEmpresa, caronaID, trechoID, passageiroID, passNome)
 	ok := dispararPOST(endpoint, payload)
 	fmt.Printf("[CLIENTE-REST 2PC] Resposta Fase 2 de %s: sucesso=%v\n", urlEmpresa, ok)
 	return ok
 }
 
 // CancelarReservaRemota executa a Fase 2 (Rollback/Abort) do 2PC em uma empresa parceira recebendo um Trecho
-func CancelarReservaRemota(urlEmpresa string, trecho modelos.Trecho) bool {
-	return CancelarReservaRemotaPorID(urlEmpresa, trecho.CaronaID, trecho.ID)
+func CancelarReservaRemota(urlEmpresa string, trecho modelos.Trecho, extras ...string) bool {
+	return CancelarReservaRemotaPorID(urlEmpresa, trecho.CaronaID, trecho.ID, extras...)
 }
 
-// CancelarReservaRemotaPorID executa a Fase 2 (Rollback/Abort) do 2PC passando os IDs diretamente
-func CancelarReservaRemotaPorID(urlEmpresa, caronaID, trechoID string) bool {
+// CancelarReservaRemotaPorID executa a Fase 2 (Rollback/Abort) do 2PC passando os IDs diretamente e passageiro se houver
+func CancelarReservaRemotaPorID(urlEmpresa, caronaID, trechoID string, extras ...string) bool {
 	urlEmpresa = strings.TrimRight(urlEmpresa, "/")
 	endpoint := urlEmpresa + "/api/reservas/cancelar"
 
-	payload := PedidoReserva{
-		CaronaID: caronaID,
-		TrechoID: trechoID,
+	var passID string
+	var passNome string
+	if len(extras) > 0 {
+		passID = extras[0]
 	}
-	fmt.Printf("[CLIENTE-REST 2PC] Enviando ROLLBACK (Cancelar) para %s [Carona: %s, Trecho: %s]...\n", urlEmpresa, caronaID, trechoID)
+	if len(extras) > 1 {
+		passNome = extras[1]
+	}
+
+	payload := PedidoReserva{
+		CaronaID:       caronaID,
+		TrechoID:       trechoID,
+		PassageiroID:   passID,
+		PassageiroNome: passNome,
+	}
+	fmt.Printf("[CLIENTE-REST 2PC] Enviando ROLLBACK (Cancelar) para %s [Carona: %s, Trecho: %s, Passageiro: %s (%s)]...\n",
+		urlEmpresa, caronaID, trechoID, passID, passNome)
 	ok := dispararPOST(endpoint, payload)
 	fmt.Printf("[CLIENTE-REST 2PC] Resposta Rollback de %s: sucesso=%v\n", urlEmpresa, ok)
 	return ok

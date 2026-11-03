@@ -18,12 +18,13 @@ var Parceiros []string
 
 // PedidoReserva representa o corpo JSON enviado nas operações do 2PC e Lamport
 type PedidoReserva struct {
-	CaronaID      string `json:"carona_id"`
-	TrechoID      string `json:"trecho_id"`
-	ID            string `json:"id,omitempty"` // suporte caso o cliente envie um modelos.Trecho
-	PassageiroID  string `json:"passageiro_id,omitempty"`
-	RelogioLogico uint64 `json:"relogio_logico,omitempty"`
-	IDOrigem      string `json:"id_origem,omitempty"`
+	CaronaID       string `json:"carona_id"`
+	TrechoID       string `json:"trecho_id"`
+	ID             string `json:"id,omitempty"` // suporte caso o cliente envie um modelos.Trecho
+	PassageiroID   string `json:"passageiro_id,omitempty"`
+	PassageiroNome string `json:"passageiro_nome,omitempty"`
+	RelogioLogico  uint64 `json:"relogio_logico,omitempty"`
+	IDOrigem       string `json:"id_origem,omitempty"`
 }
 
 // ObterTrechoID retorna o ID do trecho seja pelo campo trecho_id ou id
@@ -54,8 +55,12 @@ func IniciarAPI(porta string) {
 	estado.PrepararReservaRemotaFunc = func(urlEmpresa, caronaID, trechoID string, relogio uint64, idOrigem string) bool {
 		return PrepararReservaRemotaPorID(urlEmpresa, caronaID, trechoID, relogio, idOrigem)
 	}
-	estado.EfetivarReservaRemotaFunc = EfetivarReservaRemotaPorID
-	estado.CancelarReservaRemotaFunc = CancelarReservaRemotaPorID
+	estado.EfetivarReservaRemotaFunc = func(urlEmpresa, caronaID, trechoID, passageiroID string, extras ...string) bool {
+		return EfetivarReservaRemotaPorID(urlEmpresa, caronaID, trechoID, passageiroID, extras...)
+	}
+	estado.CancelarReservaRemotaFunc = func(urlEmpresa, caronaID, trechoID string, extras ...string) bool {
+		return CancelarReservaRemotaPorID(urlEmpresa, caronaID, trechoID, extras...)
+	}
 	estado.NotificarCancelamentoCaronaFunc = NotificarCancelamentoCaronaRemota
 
 	mux := http.NewServeMux() // Cria um roteador HTTP
@@ -171,9 +176,9 @@ func handleEfetivar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sucesso := estado.EfetivarVaga(req.CaronaID, trechoID, req.PassageiroID)
-	fmt.Printf("[REST %s] FASE 2 (Efetivar/Commit) -> Carona %s, Trecho %s para Passageiro %s: efetivado=%v\n",
-		MinhaURL, req.CaronaID, trechoID, req.PassageiroID, sucesso)
+	sucesso := estado.EfetivarVaga(req.CaronaID, trechoID, req.PassageiroID, req.PassageiroNome)
+	fmt.Printf("[REST %s] FASE 2 (Efetivar/Commit) -> Carona %s, Trecho %s para Passageiro %s (%s): efetivado=%v\n",
+		MinhaURL, req.CaronaID, trechoID, req.PassageiroID, req.PassageiroNome, sucesso)
 
 	w.Header().Set("Content-Type", "application/json")
 	if sucesso {
@@ -212,9 +217,9 @@ func handleCancelar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	estado.CancelarVaga(req.CaronaID, trechoID)
-	fmt.Printf("[REST %s] ROLLBACK (Cancelar) -> Carona %s, Trecho %s: vaga devolvida ao estoque\n",
-		MinhaURL, req.CaronaID, trechoID)
+	estado.CancelarVaga(req.CaronaID, trechoID, req.PassageiroID, req.PassageiroNome)
+	fmt.Printf("[REST %s] ROLLBACK (Cancelar) -> Carona %s, Trecho %s [Passageiro: %s (%s)]: vaga devolvida e passageiro removido\n",
+		MinhaURL, req.CaronaID, trechoID, req.PassageiroID, req.PassageiroNome)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
