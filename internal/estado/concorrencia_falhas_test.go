@@ -230,3 +230,100 @@ func TestAutoRecuperacaoLeaseTTL(t *testing.T) {
 	reg.Unlock()
 }
 
+// TestCancelamentoCascataDistribuido prova que quando um motorista parceiro (Servidor B) cancela uma carona,
+// o Servidor A cancela em cascata o itinerário do passageiro e devolve a vaga do motorista do Servidor A!
+func TestCancelamentoCascataDistribuido(t *testing.T) {
+	MinhaURL = "http://servidor-a:8082"
+	EmpresasParceiras = []string{"http://servidor-b:8082"}
+
+	caronaAID := fmt.Sprintf("carona_cascata_a_%d", time.Now().UnixNano())
+	trechoAID := fmt.Sprintf("trecho_cascata_a_%d", time.Now().UnixNano())
+
+	trechoA := modelos.Trecho{
+		ID:             trechoAID,
+		CaronaID:       caronaAID,
+		MotoristaID:    "motorista_a",
+		Origem:         "Feira de Santana",
+		Destino:        "Vitória da Conquista",
+		Valor:          50.0,
+		VagasTotais:    3,
+		VagasLivres:    3,
+		HorarioSaida:   time.Now().Add(24 * time.Hour).Format(modelos.FormatoDataHora),
+		HorarioChegada: time.Now().Add(28 * time.Hour).Format(modelos.FormatoDataHora),
+		URL_Empresa:    MinhaURL,
+	}
+
+	Caronas.Store(caronaAID, &RegistroCarona{
+		Dados: modelos.Carona{
+			ID:          caronaAID,
+			MotoristaID: "motorista_a",
+			Origem:      "Feira de Santana",
+			Destino:     "Vitória da Conquista",
+			Assentos:    3,
+			Trechos:     []modelos.Trecho{trechoA},
+		},
+	})
+
+	caronaBID := fmt.Sprintf("carona_cascata_b_%d", time.Now().UnixNano())
+	trechoBID := fmt.Sprintf("trecho_cascata_b_%d", time.Now().UnixNano())
+
+	trechoB := modelos.Trecho{
+		ID:             trechoBID,
+		CaronaID:       caronaBID,
+		MotoristaID:    "motorista_b",
+		Origem:         "Vitória da Conquista",
+		Destino:        "Montes Claros",
+		Valor:          80.0,
+		VagasTotais:    2,
+		VagasLivres:    2,
+		HorarioSaida:   time.Now().Add(30 * time.Hour).Format(modelos.FormatoDataHora),
+		HorarioChegada: time.Now().Add(40 * time.Hour).Format(modelos.FormatoDataHora),
+		URL_Empresa:    "http://servidor-b:8082",
+	}
+
+	// 1. Passageiro compra viagem combinada (Trecho A + Trecho B)
+	passageiro := "passageiro_cascata_1"
+	itinID := fmt.Sprintf("itin_cascata_%d", time.Now().UnixNano())
+	itinerario := modelos.Itinerario{
+		ID:           itinID,
+		PassageiroID: passageiro,
+		Origem:       "Feira de Santana",
+		Destino:      "Montes Claros",
+		ValorTotal:   130.0,
+		Trechos:      []modelos.Trecho{trechoA, trechoB},
+	}
+	Itinerarios.Store(itinID, itinerario)
+
+	// Ocupa a vaga no motorista local A
+	val, _ := Caronas.Load(caronaAID)
+	reg := val.(*RegistroCarona)
+	reg.Lock()
+	reg.Dados.Trechos[0].VagasLivres = 2
+	reg.Dados.Trechos[0].Passageiros = append(reg.Dados.Trechos[0].Passageiros, passageiro)
+	reg.Unlock()
+
+	// 2. Motorista B cancela a carona dele no Servidor B -> Notificação chega no Servidor A
+	afetados := ProcessarCancelamentoRemotoCarona(caronaBID, "motorista_b")
+	if afetados != 1 {
+		t.Fatalf("Esperava que 1 itinerário fosse cancelado em cascata, obteve %d", afetados)
+	}
+
+	// 3. Verifica se o itinerário foi removido do passageiro
+	if _, existe := Itinerarios.Load(itinID); existe {
+		t.Fatalf("O itinerário %s não deveria mais existir após o cancelamento em cascata!", itinID)
+	}
+
+	// 4. Verifica se a vaga do Motorista A voltou ao estoque (de 2 para 3)
+	reg.Lock()
+	if reg.Dados.Trechos[0].VagasLivres != 3 {
+		t.Errorf("A vaga do Motorista A deveria ter retornado para 3, mas ficou em %d", reg.Dados.Trechos[0].VagasLivres)
+	}
+	// Verifica se o passageiro foi removido da lista de embarque do Motorista A
+	for _, p := range reg.Dados.Trechos[0].Passageiros {
+		if p == passageiro {
+			t.Errorf("O passageiro não deveria mais estar na lista de embarque do Motorista A!")
+		}
+	}
+	reg.Unlock()
+}
+

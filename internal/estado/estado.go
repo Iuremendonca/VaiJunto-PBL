@@ -40,7 +40,8 @@ var (
 	BuscarTrechosRemotosFunc  func(urlEmpresa, dataInicio, dataFim string) ([]modelos.Trecho, error)
 	PrepararReservaRemotaFunc func(urlEmpresa, caronaID, trechoID string, relogio uint64, idOrigem string) bool
 	EfetivarReservaRemotaFunc func(urlEmpresa, caronaID, trechoID, passageiroID string) bool
-	CancelarReservaRemotaFunc func(urlEmpresa, caronaID, trechoID string) bool
+	CancelarReservaRemotaFunc       func(urlEmpresa, caronaID, trechoID string) bool
+	NotificarCancelamentoCaronaFunc func(urlEmpresa, caronaID, motoristaID string) bool
 )
 
 var Itinerarios sync.Map //Armazena as viagens confirmadas
@@ -954,7 +955,48 @@ func CancelarCaronaPeloMotorista(motoristaID, caronaID string) (int, error) {
 	salvarCaronasEItinerarios()
 	salvarNotificacoes()
 
+	// Avisa os servidores parceiros do consórcio para cancelarem em cascata
+	// as viagens de passageiros de outras empresas que incluíam esta carona
+	if NotificarCancelamentoCaronaFunc != nil && len(EmpresasParceiras) > 0 {
+		go func(cid, mid string) {
+			for _, parceiro := range EmpresasParceiras {
+				if parceiro != "" && parceiro != MinhaURL {
+					NotificarCancelamentoCaronaFunc(parceiro, cid, mid)
+				}
+			}
+		}(caronaID, motoristaID)
+	}
+
 	return afetados, nil
+}
+
+// ProcessarCancelamentoRemotoCarona é executada quando um servidor parceiro notifica que uma carona dele foi cancelada.
+// O servidor varre os itinerários locais e cancela em cascata as viagens que dependiam dela,
+// liberando as vagas dos motoristas locais e notificando passageiros e motoristas.
+func ProcessarCancelamentoRemotoCarona(caronaID, motoristaID string) int {
+	afetados := 0
+	Itinerarios.Range(func(key, value any) bool {
+		itinerario := value.(modelos.Itinerario)
+
+		for _, t := range itinerario.Trechos {
+			if t.CaronaID == caronaID {
+				if _, cancelou := cancelarItinerario(itinerario.ID); cancelou {
+					afetados++
+					fmt.Printf("[CONSÓRCIO] Itinerário %s do passageiro %s cancelado em cascata após cancelamento da carona parceira %s.\n",
+						itinerario.ID, itinerario.PassageiroID, caronaID)
+					avisarCancelamentoEmCascata(itinerario, motoristaID, caronaID, "Carona parceira "+caronaID)
+				}
+				break
+			}
+		}
+		return true
+	})
+
+	if afetados > 0 {
+		salvarCaronasEItinerarios()
+		salvarNotificacoes()
+	}
+	return afetados
 }
 
 // Avisa o passageiro que perdeu a viagem e os OUTROS motoristas que perderam esse passageiro

@@ -56,6 +56,7 @@ func IniciarAPI(porta string) {
 	}
 	estado.EfetivarReservaRemotaFunc = EfetivarReservaRemotaPorID
 	estado.CancelarReservaRemotaFunc = CancelarReservaRemotaPorID
+	estado.NotificarCancelamentoCaronaFunc = NotificarCancelamentoCaronaRemota
 
 	mux := http.NewServeMux() // Cria um roteador HTTP
 
@@ -64,6 +65,7 @@ func IniciarAPI(porta string) {
 	mux.HandleFunc("/api/reservas/preparar", handlePreparar)
 	mux.HandleFunc("/api/reservas/efetivar", handleEfetivar)
 	mux.HandleFunc("/api/reservas/cancelar", handleCancelar)
+	mux.HandleFunc("/api/caronas/cancelada", handleCaronaCancelada)
 
 	fmt.Printf("[REST] Servidor do Consórcio rodando na porta %s (URL pública: %s | Parceiros: %v)\n",
 		porta, MinhaURL, Parceiros)
@@ -220,5 +222,39 @@ func handleCancelar(w http.ResponseWriter, r *http.Request) {
 		"status":    "reserva_cancelada",
 		"carona_id": req.CaronaID,
 		"trecho_id": trechoID,
+	})
+}
+
+// Handler para cancelamento em cascata avisado por empresa parceira do consórcio
+func handleCaronaCancelada(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Método não permitido", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		CaronaID    string `json:"carona_id"`
+		MotoristaID string `json:"motorista_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "JSON inválido", http.StatusBadRequest)
+		return
+	}
+
+	if req.CaronaID == "" {
+		http.Error(w, "carona_id é obrigatório", http.StatusBadRequest)
+		return
+	}
+
+	afetados := estado.ProcessarCancelamentoRemotoCarona(req.CaronaID, req.MotoristaID)
+	fmt.Printf("[REST %s] CASCATA: Carona parceira %s foi cancelada -> %d itinerário(s) local(is) cancelado(s)\n",
+		MinhaURL, req.CaronaID, afetados)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]any{
+		"status":                "processado",
+		"carona_id":             req.CaronaID,
+		"itinerarios_afetados": afetados,
 	})
 }

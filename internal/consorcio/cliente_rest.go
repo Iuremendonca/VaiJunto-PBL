@@ -151,6 +151,21 @@ func CancelarReservaRemotaPorID(urlEmpresa, caronaID, trechoID string) bool {
 	return ok
 }
 
+// NotificarCancelamentoCaronaRemota avisa as empresas parceiras que uma carona foi cancelada pelo motorista (cascata)
+func NotificarCancelamentoCaronaRemota(urlEmpresa, caronaID, motoristaID string) bool {
+	urlEmpresa = strings.TrimRight(urlEmpresa, "/")
+	endpoint := urlEmpresa + "/api/caronas/cancelada"
+
+	payload := map[string]string{
+		"carona_id":    caronaID,
+		"motorista_id": motoristaID,
+	}
+	fmt.Printf("[CLIENTE-REST CASCATA] Notificando cancelamento da carona %s para parceiro %s...\n", caronaID, urlEmpresa)
+	ok := dispararPOST(endpoint, payload)
+	fmt.Printf("[CLIENTE-REST CASCATA] Resposta de %s: sucesso=%v\n", urlEmpresa, ok)
+	return ok
+}
+
 // Função auxiliar genérica para disparar requisições POST com JSON
 func dispararPOST(endpoint string, dados any) bool {
 	corpoJSON, err := json.Marshal(dados)

@@ -106,6 +106,23 @@ Cancela a pré-reserva e devolve imediatamente a vaga ao estoque do motorista.
 
 ---
 
+### 2.5. `POST /api/caronas/cancelada` (Cancelamento em Cascata Distribuído)
+Notifica as empresas parceiras do consórcio quando um motorista cancela a sua carona, para que as viagens multitrecho dependentes sejam desfeitas em cascata.
+
+* **Método:** `POST`
+* **Corpo da Requisição (JSON):**
+```json
+{
+  "carona_id": "carona_50",
+  "motorista_id": "mot_carlos"
+}
+```
+* **Códigos de Retorno:**
+  * `200 OK`: Notificação processada com sucesso (`{"status": "sucesso", "itinerarios_afetados": N}`).
+* **Comportamento:** O servidor receptor varre seus itinerários locais ativos. Qualquer itinerário que continha essa carona tem sua compra desfeita: a vaga do trecho local é devolvida ao estoque do motorista local, e tanto o passageiro quanto o motorista local recebem notificações no sistema.
+
+---
+
 ## 3. Diagrama de Sequência: Confirmação de Itinerário Multiempreza (2PC)
 
 O diagrama abaixo ilustra a confirmação de um itinerário composto pelo **Trecho 1 (Empresa A)** e pelo **Trecho 2 (Empresa B)**:
