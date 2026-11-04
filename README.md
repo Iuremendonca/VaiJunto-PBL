@@ -1,11 +1,13 @@
-# VaiJunto: Sistema de Caronas Compartilhadas
+# VaiJunto: Sistema de Caronas Compartilhadas e Consórcio Distribuído
 
-Protótipo distribuído de caronas de média e longa distância (TEC502, Problema 1).
-Motoristas publicam rotas com paradas, e passageiros buscam e reservam assentos **por trecho**, inclusive combinando carros de motoristas diferentes.
-Toda a comunicação usa **sockets TCP nativos** com mensagens **JSON**, e o controle de concorrência é feito pelo próprio servidor, sem banco de dados.
+Protótipo distribuído de caronas de média e longa distância (TEC502, MI - Conectividade e Concorrência).
+O sistema evoluiu do modelo centralizado (**Problema 1**) para um **Consórcio Distribuído Multi-Empresas** (**Problema 2**), onde diferentes empresas de transporte cooperam em rede federada para oferecer rotas interligadas, mantendo autonomia e consistência transacional.
+Motoristas publicam rotas com paradas, e passageiros buscam e reservam assentos **por trecho**, inclusive combinando carros de motoristas de empresas diferentes.
+A comunicação com os clientes usa **sockets TCP nativos** com mensagens **JSON**, enquanto a coordenação entre servidores parceiros usa **HTTP/REST**. Todo o controle de concorrência, consistência transacional (2PC) e ordenação causal (Lamport) é feito pelo próprio sistema, sem banco de dados.
 
-- **Linguagem:** Go 1.26, só biblioteca padrão, sem frameworks.
-- **Especificação do protocolo:** [`docs/PROTOCOLO.md`](docs/PROTOCOLO.md)
+- **Linguagem:** Go 1.26, só biblioteca padrão, sem frameworks externos.
+- **Especificação do protocolo TCP (Clientes):** [`docs/PROTOCOLO.md`](docs/PROTOCOLO.md)
+- **Especificação da API REST (Consórcio):** [`docs/API_REST.md`](docs/API_REST.md)
 
 ---
 
@@ -22,6 +24,7 @@ Toda a comunicação usa **sockets TCP nativos** com mensagens **JSON**, e o con
 10. [Testes](#10-testes)
 11. [Docker e execução em máquinas distintas](#11-docker-e-execução-em-máquinas-distintas)
 12. [Estrutura do projeto](#12-estrutura-do-projeto)
+13. [Consórcio Distribuído Multi-Empresas (Problema 2)](#13-consórcio-distribuído-multi-empresas-problema-2)
 
 ---
 
@@ -38,26 +41,30 @@ Para usar outro servidor: `SERVER_URL=192.168.0.10:8081 go run ./cmd/cliente_pas
 
 ### Com Docker (uma máquina)
 ```bash
-docker compose up --build -d vaijunto-server         # servidor em segundo plano
+docker compose up --build -d servidor-empresa-a servidor-empresa-b servidor-empresa-c # sobe os 3 servidores do consórcio
 docker compose run --rm motorista-1                  # cliente motorista (interativo)
 docker compose run --rm passageiro-1                 # cliente passageiro (interativo)
-docker compose logs -f vaijunto-server               # acompanhar o servidor
+docker compose logs -f                               # acompanhar os servidores
 ```
 
 Para demonstrar a expiração do carrinho sem esperar 1 minuto, suba o servidor com um prazo menor. O log mostra o valor em uso (`Tempo de reserva do carrinho: 20s`).
 ```bash
-VAIJUNTO_TEMPO_RESERVA=20s docker compose up -d vaijunto-server
+VAIJUNTO_TEMPO_RESERVA=20s docker compose up -d servidor-empresa-a
 ```
 
 ### Variáveis de ambiente
 
 | Variável | Onde | Padrão | Uso |
 |---|---|---|---|
-| `PORTA` | servidor | `8081` | porta TCP |
-| `VAIJUNTO_DADOS` | servidor | pasta atual | pasta dos arquivos JSON |
-| `VAIJUNTO_TEMPO_RESERVA` | servidor | `1m` | tempo que as vagas ficam no carrinho, renovado a cada trecho adicionado (ex.: `20s`). No compose, pode ser passado na hora de subir (ver abaixo) |
+| `PORTA` | servidor | `8081` | porta TCP de atendimento aos clientes |
+| `PORTA_REST` | servidor | `8082` | porta HTTP/REST da API do consórcio |
+| `URL_EMPRESA` | servidor | `http://localhost:<PORTA_REST>` | URL base pública desta empresa no consórcio |
+| `EMPRESAS_PARCEIRAS` | servidor | portas 8082, 9082, 10082 | lista de URLs das empresas parceiras separadas por vírgula |
+| `ID_EMPRESA` | servidor | derivado da URL | identificador para o Relógio Lógico de Lamport |
+| `VAIJUNTO_DADOS` | servidor | pasta atual | pasta onde são gravados os arquivos JSON (criada automaticamente) |
+| `VAIJUNTO_TEMPO_RESERVA` | servidor | `1m` | tempo que as vagas ficam no carrinho, renovado a cada trecho adicionado (ex.: `20s`) |
 | `TZ` | servidor | do sistema | fuso para comparar horários (no compose: `America/Bahia`) |
-| `SERVER_URL` | clientes / teste | `localhost:8081` | endereço do servidor |
+| `SERVER_URL` | clientes / teste | `localhost:8081` | endereço TCP do servidor ao qual o cliente se conecta |
 | `IP_EXTERNO` | docker compose | — | `IP:porta` do servidor quando ele está em outra máquina |
 
 ---
@@ -266,7 +273,7 @@ A compra tem duas etapas:
 
 ## 10. Testes
 
-### Testes automatizados (unitários e de protocolo)
+### Testes automatizados (unitários, distribuídos e de concorrência)
 ```bash
 go test -race ./...
 ```
@@ -279,6 +286,21 @@ go test -race ./...
   - reconciliação após queda e gravação concorrente;
   - central de notificações (quem é avisado em cada evento, contador que zera ao abrir, limite e gravação);
   - um **teste de estresse** com compras, cancelamentos e cascatas simultâneos que confere as invariantes.
+- **`internal/consorcio/consorcio_test.go`:**
+  - comunicação HTTP/REST entre servidores do consórcio;
+  - *Scatter-Gather* com filtro de datas;
+  - Fase 1 (Prepare) e Rollback (Cancel);
+  - Fase 2 (Commit/Efetivar) com inclusão do passageiro no manifesto e notificação do motorista parceiro.
+- **`internal/estado/busca_distribuida_test.go`:**
+  - *Scatter-Gather* concorrente e união no grafo BFS;
+  - rota multi-empresa combinando 3 servidores distintos (A ➔ B ➔ C);
+  - reserva interativa no carrinho preservando vagas locais e remotas.
+- **`internal/estado/concorrencia_falhas_test.go`:**
+  - injeção de falhas e queda de servidor durante o *Prepare* e durante o *Commit* do 2PC;
+  - abort atômico e rollback de vagas com aviso ao passageiro;
+  - concorrência extrema com 50 requisições simultâneas disputando a última vaga e preempção por Relógio Lógico de Lamport;
+  - recuperação autônoma de assentos por *Lease TTL* em background;
+  - cancelamento em cascata distribuído provocado por motorista parceiro.
 - **`cmd/servidor/mainServer_test.go`** (via `net.Pipe`): mensagens malformadas, sessão e perfis, IDs do payload ignorados, mensagem acima do limite e central de notificações.
 
 ### Teste de carga (múltiplos clientes TCP simultâneos)
@@ -341,29 +363,118 @@ IP_EXTERNO=192.168.0.10:8081 docker compose --profile teste run --rm --no-deps t
 
 ## 11. Docker e execução em máquinas distintas
 
-Cada componente tem sua imagem (`Dockerfile.servidor`, `Dockerfile.motorista`, `Dockerfile.passageiro`, `Dockerfile.teste`). Todas usam build em dois estágios: compilação em `golang:1.26-alpine` e execução em `alpine`.
+Cada componente tem sua imagem (`Dockerfile.servidor`, `Dockerfile.motorista`, `Dockerfile.passageiro`, `Dockerfile.teste`). Todas usam build em dois estágios: compilação em `golang:1.26-alpine` e execução em imagem enxuta `alpine`.
 
-**Máquina do servidor:**
-```bash
-docker compose up --build -d vaijunto-server
-```
-- A porta 8081 do contêiner é publicada na 8081 da máquina (`ports: "8081:8081"`), e os clientes de outras máquinas se conectam ao **IP da máquina hospedeira**. Libere a porta no firewall se necessário.
-- A pasta `cmd/servidor` é montada em `/root/dados` (volume), então os dados sobrevivem à recriação do contêiner.
-- A pasta é montada inteira, e não arquivo por arquivo, porque a gravação atômica usa `rename`.
+### 11.1. Execução em uma única máquina (Single-host)
 
-> Se já houver um servidor local usando a porta 8081 (por exemplo, rodando com `go run`), pare-o antes.
+Neste modo, os três servidores do consórcio rodam juntos na mesma máquina física e se comunicam através da rede interna do Docker Compose:
 
-**Máquinas dos clientes:**
-```bash
-IP_EXTERNO=<ip-do-servidor>:8081 docker compose run --rm --no-deps passageiro-1
-IP_EXTERNO=<ip-do-servidor>:8081 docker compose run --rm --no-deps motorista-1
-```
-- `--no-deps` evita subir outro servidor localmente.
-- `IP_EXTERNO` substitui o endereço interno (`vaijunto-server:8081`), que só funciona **dentro** da rede do Compose de uma mesma máquina.
-- Esse era o problema de conectividade entre máquinas: o nome do serviço só é resolvido pelo DNS interno do Docker, então entre máquinas o cliente precisa usar o IP real do hospedeiro, com a porta publicada.
-- Vários clientes: basta repetir o comando em quantos terminais ou máquinas quiser.
+1. **Subir os 3 servidores do consórcio:**
+   ```bash
+   docker compose up --build -d servidor-empresa-a servidor-empresa-b servidor-empresa-c
+   ```
+   - O Compose publica as portas de cada empresa no host:
+     - **Empresa A:** TCP `8081` (clientes) / REST `8082` (consórcio)
+     - **Empresa B:** TCP `9081` (clientes) / REST `9082` (consórcio)
+     - **Empresa C:** TCP `10081` (clientes) / REST `10082` (consórcio)
+   - Os dados persistentes de cada empresa ficam mapeados nos volumes `./cmd/servidor/dados_a`, `dados_b` e `dados_c`.
 
-**Vantagens:** o mesmo ambiente em qualquer máquina do laboratório, várias instâncias de cliente com um comando, isolamento de dependências, e servidor e dados separados do código.
+2. **Executar clientes interativos na mesma máquina:**
+   - Conectar à **Empresa A** (porta 8081 - padrão):
+     ```bash
+     docker compose run --rm motorista-1
+     docker compose run --rm passageiro-1
+     ```
+   - Conectar à **Empresa B** (porta 9081) ou **Empresa C** (porta 10081):
+     ```bash
+     IP_EXTERNO=servidor-empresa-b:9081 docker compose run --rm passageiro-1
+     IP_EXTERNO=servidor-empresa-c:10081 docker compose run --rm passageiro-1
+     ```
+
+3. **Acompanhar logs:**
+   ```bash
+   docker compose logs -f
+   ```
+
+---
+
+### 11.2. Execução em máquinas distintas (Multi-host / Laboratório)
+
+Para demonstrações no laboratório ou testes distribuídos reais, há dois cenários possíveis:
+
+#### Cenário A: Servidores em uma máquina e Clientes em outras máquinas
+
+Ideal para quando um computador hospeda os servidores do consórcio e outros computadores (ou notebooks) rodam os clientes:
+
+1. **Na máquina dos servidores (ex.: IP `192.168.1.100`):**
+   ```bash
+   docker compose up --build -d servidor-empresa-a servidor-empresa-b servidor-empresa-c
+   ```
+   - Certifique-se de que as portas TCP (`8081`, `9081`, `10081`) e REST (`8082`, `9082`, `10082`) estão liberadas no firewall da máquina servidora.
+
+2. **Nas máquinas dos clientes:**
+   O cliente usa o IP real da máquina servidora através da variável `IP_EXTERNO`:
+   ```bash
+   # Cliente passageiro na Empresa A:
+   IP_EXTERNO=192.168.1.100:8081 docker compose run --rm --no-deps passageiro-1
+
+   # Cliente motorista na Empresa B:
+   IP_EXTERNO=192.168.1.100:9081 docker compose run --rm --no-deps motorista-1
+
+   # Cliente passageiro na Empresa C:
+   IP_EXTERNO=192.168.1.100:10081 docker compose run --rm --no-deps passageiro-1
+   ```
+   - A flag `--no-deps` evita que o Docker tente inicializar o contêiner do servidor localmente na máquina do cliente.
+   - Caso a máquina do cliente possua Go instalado, também pode rodar diretamente sem Docker:
+     ```bash
+     SERVER_URL=192.168.1.100:8081 go run ./cmd/cliente_passageiro
+     ```
+
+#### Cenário B: Servidores distribuídos entre máquinas distintas (Cada máquina roda uma Empresa)
+
+Este é o teste mais realista do Consórcio Distribuído: cada empresa opera em um computador ou servidor físico diferente.
+
+Exemplo de topologia:
+- **Máquina 1 (Empresa A):** IP `192.168.1.10`
+- **Máquina 2 (Empresa B):** IP `192.168.1.20`
+- **Máquina 3 (Empresa C):** IP `192.168.1.30`
+
+Como os servidores estão em hosts diferentes, o endereço interno do Docker não é resolvido entre máquinas distintas. Informamos os IPs reais dos parceiros via variáveis de ambiente:
+
+1. **Na Máquina 1 (Empresa A):**
+   ```bash
+   URL_EMPRESA_A=http://192.168.1.10:8082 \
+   EMPRESAS_PARCEIRAS_A=http://192.168.1.20:9082,http://192.168.1.30:10082 \
+   docker compose up --build -d servidor-empresa-a
+   ```
+
+2. **Na Máquina 2 (Empresa B):**
+   ```bash
+   URL_EMPRESA_B=http://192.168.1.20:9082 \
+   EMPRESAS_PARCEIRAS_B=http://192.168.1.10:8082,http://192.168.1.30:10082 \
+   docker compose up --build -d servidor-empresa-b
+   ```
+
+3. **Na Máquina 3 (Empresa C):**
+   ```bash
+   URL_EMPRESA_C=http://192.168.1.30:10082 \
+   EMPRESAS_PARCEIRAS_C=http://192.168.1.10:8082,http://192.168.1.20:9082 \
+   docker compose up --build -d servidor-empresa-c
+   ```
+
+4. **Conectar clientes em qualquer máquina da rede:**
+   ```bash
+   # Para acessar a Empresa A (na Máquina 1):
+   IP_EXTERNO=192.168.1.10:8081 docker compose run --rm --no-deps passageiro-1
+
+   # Para acessar a Empresa B (na Máquina 2):
+   IP_EXTERNO=192.168.1.20:9081 docker compose run --rm --no-deps motorista-1
+   ```
+
+**Vantagens do uso do Docker:**
+- Garante o mesmo ambiente e dependências em qualquer máquina do laboratório;
+- Isolamento total dos dados de cada empresa;
+- Facilidade para simular quedas de nós individuais (`docker compose stop servidor-empresa-c`) e verificar a tolerância a falhas do 2PC e do cancelamento em cascata.
 
 ---
 
@@ -372,22 +483,214 @@ IP_EXTERNO=<ip-do-servidor>:8081 docker compose run --rm --no-deps motorista-1
 ```
 VaiJunto/
 ├── cmd/
-│   ├── servidor/            # servidor TCP (+ testes de protocolo) e arquivos JSON
-│   ├── cliente_motorista/   # aplicativo do motorista
-│   ├── cliente_passageiro/  # aplicativo do passageiro
-│   └── TesteCarga/          # teste de carga e corretude
+│   ├── servidor/            # servidor TCP/JSON + REST (+ testes de protocolo) e dados JSON
+│   ├── cliente_motorista/   # aplicativo do motorista (terminal TCP)
+│   ├── cliente_passageiro/  # aplicativo do passageiro (terminal TCP)
+│   ├── TesteCarga/          # teste de carga e corretude com 300+ clientes
+│   └── simular_consorcio/   # utilitário CLI para testar chamadas REST do consórcio
 ├── internal/
-│   ├── estado/              # regras, travas, carrinho, busca, notificações, persistência (+ testes)
-│   ├── protocolo/           # mensagens, leitura/escrita com limites e prazos
-│   ├── modelos/             # estruturas e constantes compartilhadas
-│   └── cli/                 # leitura validada do teclado e requisições dos clientes
-├── docs/PROTOCOLO.md        # especificação do protocolo
-├── docker-compose.yaml
+│   ├── consorcio/           # API REST, cliente HTTP, Relógios de Lamport (+ testes)
+│   ├── estado/              # regras, BFS, 2PC, travas, notificações, persistência (+ testes)
+│   ├── protocolo/           # mensagens TCP/JSON, leitura/escrita com limites e prazos
+│   ├── modelos/             # estruturas compartilhadas (Carona, Trecho, Itinerario)
+│   └── cli/                 # interface de texto dos clientes e comunicação com servidor
+├── docs/
+│   ├── PROTOCOLO.md         # especificação técnica do protocolo TCP cliente-servidor
+│   └── API_REST.md          # especificação técnica da API REST entre empresas do consórcio
+├── docker-compose.yaml      # emulação multi-empresa (3 servidores: Empresa A, B e C)
 └── Dockerfile.{servidor,motorista,passageiro,teste}
 ```
 
-### Limitações conhecidas (protótipo)
-- As senhas ficam em texto puro no `usuarios.json`, e a conexão não é criptografada.
-- Existe um único servidor, sem réplicas (exigência do enunciado).
-- As cidades atendidas são uma lista fixa (`modelos.CidadesValidas`).
-- Viagens antigas não são removidas automaticamente, apenas deixam de aparecer nas buscas.
+---
+
+## 13. Consórcio Distribuído Multi-Empresas (Problema 2)
+
+O **Problema 2** expande o sistema de caronas centralizado para um **ambiente distribuído federado**, simulando um consórcio entre diferentes empresas de transporte rodoviário. Cada empresa opera seu próprio servidor autônomo com sua base de motoristas e caronas, mas colabora em rede para montar itinerários integrados entre cidades atendidas por empresas distintas.
+
+```
+                           ┌────────────────────────┐
+                           │      Empresa A         │
+                           │ TCP: 8081 / REST: 8082 │
+                           └───────────┬────────────┘
+                                       │
+                    HTTP/REST          │           HTTP/REST
+           ┌───────────────────────────┴───────────────────────────┐
+           ▼                                                       ▼
+┌────────────────────────┐                               ┌────────────────────────┐
+│      Empresa B         │ ◀───────────────────────────▶ │      Empresa C         │
+│ TCP: 9081 / REST: 9082 │           HTTP/REST           │ TCP: 10081 /REST: 10082│
+└────────────────────────┘                               └────────────────────────┘
+```
+
+---
+
+### 13.1. Arquitetura Híbrida de Comunicação
+
+Adotou-se uma arquitetura em camadas clara e bem delimitada:
+
+1. **Clientes $\leftrightarrow$ Servidor da sua Empresa:** Comunicação via **Sockets TCP** com mensagens JSON por linha (`\n`). Preserva a sessão autenticada do motorista/passageiro e o baixo overhead.
+2. **Servidores de Empresas Diferentes $\leftrightarrow$ Servidores Parceiros:** Comunicação via **HTTP/REST** utilizando payloads JSON (`application/json`).
+   - Garante **interoperabilidade** e **desacoplamento**: cada servidor expõe endpoints bem definidos para consulta, pré-reserva e efetivação de trechos.
+   - Todo endpoint possui tratamento de **idempotência** e **timeouts explícitos** (padrão de 5 segundos) para evitar travamento em caso de lentidão ou queda do parceiro.
+
+Especificação detalhada das rotas e payloads: [`docs/API_REST.md`](docs/API_REST.md).
+
+---
+
+### 13.2. Descoberta Distribuída de Rotas (Scatter-Gather + Grafo BFS)
+
+Quando um passageiro solicita um trajeto que cruza regiões atendidas por mais de uma empresa (ex.: *Feira de Santana $\rightarrow$ Montes Claros* ou *Feira de Santana $\rightarrow$ Minas*), o servidor de origem executa o padrão **Scatter-Gather**:
+
+```
+                             Passageiro busca: Feira de Santana ➔ Minas
+                                                 │
+                                                 ▼
+                                        ┌─────────────────┐
+                                        │   Servidor A    │
+                                        └────────┬────────┘
+                                                 │
+                   ┌─────────────────────────────┼─────────────────────────────┐
+                   │ (concorrente)               │ (concorrente)               │ (local)
+                   ▼                             ▼                             ▼
+         GET /api/trechos/disponiveis  GET /api/trechos/disponiveis     Consulta sync.Map
+             (Servidor B: 9082)            (Servidor C: 10082)           (Caronas locais)
+                   │                             │                             │
+                   └─────────────────────────────┼─────────────────────────────┘
+                                                 │
+                                                 ▼
+                                    União dos trechos no Grafo BFS
+                                                 │
+                                                 ▼
+                     Itinerário montado: FSA ➔ VDC (A) + VDC ➔ MOC (B) + MOC ➔ MINAS (C)
+```
+
+1. **Consulta Concorrente (*Scatter*):** O servidor de origem dispara goroutines paralelas para cada empresa parceira cadastrada em `EmpresasParceiras`, consultando `GET /api/trechos/disponiveis?data_inicio=D&data_fim=D+1`.
+2. **Janela de Busca ($T$ a $T+1$ dia):** Conforme os requisitos do consórcio, os servidores retornam trechos com saída entre a data solicitada pelo passageiro até $+1$ dia adicional, permitindo que conexões com viagens noturnas ou que cheguem na madrugada seguinte sejam descobertas.
+3. **Agregação e Busca em Grafo (*Gather* + BFS):** Os trechos recebidos dos parceiros recebem a etiqueta de sua empresa de origem (`t.URL_Empresa`) e são integrados ao grafo de cidades em memória do servidor local. O algoritmo BFS encontra todos os caminhos válidos respeitando encadeamento de horários e cidades.
+
+---
+
+### 13.3. Transações Distribuídas com Two-Phase Commit (2PC)
+
+A reserva e confirmação de um itinerário que envolve trechos de múltiplas empresas constitui uma transação distribuída que **não pode ficar pela metade** (Princípio ACID / Atomicidade). O consórcio utiliza o protocolo **Two-Phase Commit (2PC)**:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor P as Passageiro
+    participant SA as Coordenador (Servidor A)
+    participant SB as Participante (Servidor B)
+    participant SC as Participante (Servidor C)
+
+    Note over P,SA: Fase 1: Preparação / Reserva no Carrinho
+    P->>SA: Adiciona trecho local A ao carrinho
+    SA->>SA: Decrementa vaga local (Mutex)
+    P->>SA: Adiciona trecho remoto B ao carrinho
+    SA->>SB: POST /api/reservas/preparar (Lamport L, ID: empresa_a)
+    SB->>SB: Decrementa vaga e arma Lease TTL autônomo
+    SB-->>SA: 200 OK {"status": "vaga_bloqueada"}
+    P->>SA: Adiciona trecho remoto C ao carrinho
+    SA->>SC: POST /api/reservas/preparar (Lamport L, ID: empresa_a)
+    SC->>SC: Decrementa vaga e arma Lease TTL autônomo
+    SC-->>SA: 200 OK {"status": "vaga_bloqueada"}
+
+    Note over P,SC: Fase 2: Efetivação Atômica (Commit)
+    P->>SA: Efetivar Compra
+    SA->>SB: POST /api/reservas/efetivar (passageiro_maria)
+    SB->>SB: Confirma passageiro no trecho e para TTL
+    SB-->>SA: 200 OK {"status": "reserva_efetivada"}
+    SA->>SC: POST /api/reservas/efetivar (passageiro_maria)
+    SC->>SC: Confirma passageiro no trecho e para TTL
+    SC-->>SA: 200 OK {"status": "reserva_efetivada"}
+    SA->>SA: Confirma trecho local A e persiste Itinerário
+    SA-->>P: Compra confirmada com sucesso!
+```
+
+#### Tratamento de Falhas e Abort Atômico (Rollback):
+Se qualquer participante falhar, cair ou retornar timeout durante a compra:
+- **Falha no Prepare:** O coordenador aborta a operação, devolve as vagas locais já seguradas e informa o passageiro.
+- **Queda durante o Commit:** Se o Servidor C cair antes de receber o Commit, o Servidor A detecta o erro de rede, **cancela imediatamente** os trechos já confirmados nos outros parceiros (`POST /api/reservas/cancelar`), devolve as vagas locais ao estoque do motorista, não emite nenhum itinerário e avisa o passageiro.
+
+---
+
+### 13.4. Relógios Lógicos de Lamport e Ordenação Causal
+
+Em cenários de concorrência extrema onde duas ou mais requisições de diferentes empresas disputam a **mesma última vaga** de uma carona parceira, a decisão não pode depender da latência da rede física (jitter ou atraso de pacotes TCP).
+
+Para isso, foi implementado o algoritmo de **Relógios Lógicos de Lamport** ([`internal/consorcio/relogio.go`](internal/consorcio/relogio.go)):
+
+1. **Avanço Causal:**
+   - Antes de enviar uma requisição `POST /api/reservas/preparar`, o servidor de origem executa `Tick()`: $L = L + 1$.
+   - O servidor parceiro que recebe a requisição executa `Atualizar(recebido)`: $L = \max(L_{\text{local}}, L_{\text{recebido}}) + 1$.
+2. **Critério de Desempate e Preempção Determinística:**
+   - O servidor que gerencia o assento avalia a tupla de ordem total $(L, \text{ID}_{\text{empresa}})$.
+   - Se uma vaga estiver pré-bloqueada no carrinho de um passageiro e chegar outra requisição concorrente disputando aquele último assento:
+     $$(L_{\text{novo}} < L_{\text{anterior}}) \lor (L_{\text{novo}} == L_{\text{anterior}} \land \text{ID}_{\text{novo}} < \text{ID}_{\text{anterior}})$$
+   - Quem emitiu a requisição primeiro no **tempo lógico causal** ganha a vaga, ocorrendo a preempção determinística e justa da vaga anterior.
+
+---
+
+### 13.5. Tolerância a Falhas e Recuperação de Estado
+
+| Falha Simulada | Mecanismo de Recuperação | Comportamento do Sistema |
+|---|---|---|
+| **Abandono de Carrinho** | *Lease / Soft-State* com TTL | O servidor parceiro arma um timer autônomo (`TempoReservaCarrinho + 15s`). Se o coordenador não efetivar nem cancelar, o parceiro libera o assento automaticamente. |
+| **Queda do Servidor Parceiro (Commit)** | 2PC Abort & Rollback | O coordenador detecta a queda do parceiro, cancela trechos confirmados nas outras empresas, devolve vagas locais e notifica o usuário. |
+| **Queda Repentina (`kill -9`)** | Gravação Atômica e Reconciliação | Ao reiniciar, o servidor lê os arquivos JSON e recalcula as vagas a partir das passagens efetivamente salvas (`ReconciliarEstado`). |
+| **Retentativa de Rede / Mensagem Duplicada** | Idempotência Transacional | Chamadas repetidas de `preparar`, `efetivar` ou `cancelar` reconhecem o mesmo `(carona_id, trecho_id, passageiro_id)` e respondem com sucesso sem descontar vagas duplicadas. |
+
+---
+
+### 13.6. Cancelamento em Cascata e Notificações no Consórcio
+
+1. **Cancelamento pelo Motorista Parceiro:**
+   - Se um motorista na Empresa B cancela sua carona, o Servidor B dispara `POST /api/caronas/cancelada` para todas as empresas parceiras.
+   - O Servidor A localiza todas as viagens locais de passageiros que continham aquele trecho, cancela os itinerários, restaura as vagas dos motoristas locais da Empresa A e notifica passageiros e motoristas.
+2. **Cancelamento pelo Passageiro:**
+   - Quando o passageiro cancela sua viagem no Servidor A, o cancelador despacha `POST /api/reservas/cancelar` com o `PassageiroID` para cada empresa remota.
+   - O parceiro devolve o número da vaga ao estoque, remove o passageiro do manifesto do motorista e adiciona o alerta na **Central de Notificações** do motorista parceiro (`[1]`).
+
+---
+
+### 13.7. Execução do Consórcio
+
+#### Opção A: Via Docker Compose (3 Servidores Isolados)
+O arquivo [`docker-compose.yaml`](docker-compose.yaml) sobe o consórcio completo com três empresas:
+```bash
+# Inicia as 3 empresas em segundo plano
+docker compose up -d servidor-empresa-a servidor-empresa-b servidor-empresa-c
+
+# Visualiza os logs unificados de comunicação REST e TCP
+docker compose logs -f
+
+# Encerra os serviços
+docker compose down
+```
+
+#### Opção B: Localmente no Terminal (Sem Docker)
+Graças ao auto-reconhecimento de diretórios e portas padrão, basta abrir três abas de terminal:
+
+```bash
+# Terminal 1 — Empresa A (TCP 8081 / REST 8082)
+env PORTA=8081 PORTA_REST=8082 VAIJUNTO_DADOS=/tmp/srv_a ID_EMPRESA=empresa_a go run ./cmd/servidor
+
+# Terminal 2 — Empresa B (TCP 9081 / REST 9082)
+env PORTA=9081 PORTA_REST=9082 VAIJUNTO_DADOS=/tmp/srv_b ID_EMPRESA=empresa_b go run ./cmd/servidor
+
+# Terminal 3 — Empresa C (TCP 10081 / REST 10082)
+env PORTA=10081 PORTA_REST=10082 VAIJUNTO_DADOS=/tmp/srv_c ID_EMPRESA=empresa_c go run ./cmd/servidor
+```
+
+---
+
+### 13.8. Roteiro Passo a Passo para Demonstração do Barema
+
+| Etapa | Ação | Resultado Esperado |
+|---|---|---|
+| **1. Publicação Multi-Empresa** | Motorista publica em A (`FSA ➔ VDC`), em B (`VDC ➔ MOC`) e em C (`MOC ➔ Minas`). | As 3 empresas armazenam seus respectivos trechos em suas bases locais. |
+| **2. Scatter-Gather e BFS** | Passageiro no Servidor A busca `Feira de Santana ➔ Minas`. | O Servidor A consulta B e C via REST e monta a rota integrada de 3 baldeações. |
+| **3. Bloqueio no Carrinho** | Passageiro adiciona a rota no carrinho. | Servidor A envia *Prepare (2PC)* para B e C; as vagas de B e C diminuem de imediato no estoque. |
+| **4. Efetivação Atômica** | Passageiro confirma a compra. | Servidor A envia *Commit (2PC)*; os manifestos dos motoristas de A, B e C recebem o passageiro e os alertas são emitidos. |
+| **5. Injeção de Queda** | Derruba o Servidor C (`Ctrl+C`) e tenta comprar trecho que dependa de C. | O Servidor A detecta a indisponibilidade, cancela a compra, devolve as vagas locais e avisa o passageiro. |
+| **6. Cancelamento em Cascata** | Motorista de B cancela sua carona. | Servidor B avisa o Servidor A (`/api/caronas/cancelada`), o itinerário do passageiro é desfeito e a vaga de A é restaurada. |
+| **7. Cancelamento pelo Passageiro** | Passageiro cancela seu bilhete em A. | A vaga do Servidor B e C é restaurada e os motoristas recebem notificação no menu (`[1]`). |

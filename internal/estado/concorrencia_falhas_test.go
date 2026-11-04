@@ -3,6 +3,7 @@ package estado
 import (
 	"VaiJunto/internal/modelos"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -103,6 +104,115 @@ func TestInjecaoDeFalhasERollbackAtomico(t *testing.T) {
 	viagens := ListarItinerariosPassageiro(passageiro)
 	if len(viagens) > 0 {
 		t.Errorf("Nenhum itinerário incompleto deveria existir, mas foram encontrados %d", len(viagens))
+	}
+}
+
+// TestFalhaCommit2PCEQuedaServidorRemoto valida o cenário onde o Servidor C cai ANTES do commit (Fase 2 do 2PC).
+// O Servidor B deve abortar a compra, fazer rollback da vaga local, não salvar itinerário e avisar o passageiro.
+func TestFalhaCommit2PCEQuedaServidorRemoto(t *testing.T) {
+	MinhaURL = "http://servidor-b:8082"
+	EmpresasParceiras = []string{"http://servidor-c:10082"}
+
+	caronaBID := fmt.Sprintf("carona_b_falha_%d", time.Now().UnixNano())
+	trechoBID := fmt.Sprintf("trecho_b_falha_%d", time.Now().UnixNano())
+
+	trechoB := modelos.Trecho{
+		ID:             trechoBID,
+		CaronaID:       caronaBID,
+		MotoristaID:    "mot_b",
+		Origem:         "Vitória da Conquista",
+		Destino:        "Montes Claros",
+		Valor:          50.0,
+		VagasTotais:    1,
+		VagasLivres:    1,
+		HorarioSaida:   time.Now().Add(10 * time.Hour).Format(modelos.FormatoDataHora),
+		HorarioChegada: time.Now().Add(16 * time.Hour).Format(modelos.FormatoDataHora),
+		URL_Empresa:    MinhaURL,
+	}
+
+	Caronas.Store(caronaBID, &RegistroCarona{
+		Dados: modelos.Carona{
+			ID:          caronaBID,
+			MotoristaID: "mot_b",
+			Origem:      "Vitória da Conquista",
+			Destino:     "Montes Claros",
+			Assentos:    1,
+			Trechos:     []modelos.Trecho{trechoB},
+		},
+	})
+
+	trechoC := modelos.Trecho{
+		ID:             "trecho_c_falha",
+		CaronaID:       "carona_c",
+		MotoristaID:    "mot_c",
+		Origem:         "Montes Claros",
+		Destino:        "Minas",
+		Valor:          70.0,
+		VagasTotais:    1,
+		VagasLivres:    1,
+		HorarioSaida:   time.Now().Add(17 * time.Hour).Format(modelos.FormatoDataHora),
+		HorarioChegada: time.Now().Add(22 * time.Hour).Format(modelos.FormatoDataHora),
+		URL_Empresa:    "http://servidor-c:10082",
+	}
+
+	// 1. Fase 1: Enquanto o Servidor C ainda estava online, a vaga foi preparada com sucesso
+	PrepararReservaRemotaFunc = func(urlEmpresa, caronaID, trechoID string, relogio uint64, idOrigem string) bool {
+		return true
+	}
+
+	passageiro := fmt.Sprintf("pass_queda_c_%d", time.Now().UnixNano())
+	if err := ReservarVagasTemporariamente(passageiro, []modelos.Trecho{trechoB}, false); err != nil {
+		t.Fatalf("Erro ao reservar trecho local: %v", err)
+	}
+	if err := ReservarVagasTemporariamente(passageiro, []modelos.Trecho{trechoC}, true); err != nil {
+		t.Fatalf("Erro ao reservar trecho C no carrinho: %v", err)
+	}
+
+	// Vaga local foi descontada para o carrinho
+	val, _ := Caronas.Load(caronaBID)
+	reg := val.(*RegistroCarona)
+	reg.Lock()
+	if reg.Dados.Trechos[0].VagasLivres != 0 {
+		t.Fatalf("Vaga local deveria estar reservada no carrinho (0), obtido: %d", reg.Dados.Trechos[0].VagasLivres)
+	}
+	reg.Unlock()
+
+	// 2. O Servidor C cai! Simulamos queda de rede/servidor offline no Commit (Fase 2 do 2PC)
+	EfetivarReservaRemotaFunc = func(urlEmpresa, caronaID, trechoID, passageiroID string, extras ...string) bool {
+		return false // Servidor C offline!
+	}
+
+	// 3. Passageiro tenta efetivar a compra
+	err := EfetivarItinerario(passageiro)
+	if err == nil {
+		t.Fatalf("EfetivarItinerario deveria ter FALHADO pois o Servidor C caiu!")
+	}
+
+	// 4. Valida se a mensagem explica o erro claramente
+	if !strings.Contains(err.Error(), "não está respondendo") {
+		t.Errorf("Mensagem de erro deveria avisar que o servidor parceiro não respondeu, obteve: %v", err)
+	}
+
+	// 5. ATOMICIDADE DO 2PC: Vaga local do Servidor B deve ter voltado para o estoque (1)
+	reg.Lock()
+	if reg.Dados.Trechos[0].VagasLivres != 1 {
+		t.Errorf("Vaga local deveria ter sido restaurada para 1 após o abort do 2PC, obteve %d", reg.Dados.Trechos[0].VagasLivres)
+	}
+	if len(reg.Dados.Trechos[0].Passageiros) != 0 {
+		t.Errorf("Passageiro não deveria constar na lista de embarque de nenhum motorista, mas restou: %v", reg.Dados.Trechos[0].Passageiros)
+	}
+	reg.Unlock()
+
+	// 6. Nenhum itinerário falso deve ter sido salvo para o passageiro
+	viagens := ListarItinerariosPassageiro(passageiro)
+	if len(viagens) != 0 {
+		t.Errorf("Nenhum itinerário deveria ter sido gerado, mas encontrou %d", len(viagens))
+	}
+
+	// 7. Passageiro deve ter recebido a notificação na sua central
+	notifs := AbrirNotificacoes(passageiro)
+	if len(notifs) == 0 {
+		t.Errorf("Passageiro deveria ter recebido notificação sobre o cancelamento por queda do parceiro")
 	}
 }
 

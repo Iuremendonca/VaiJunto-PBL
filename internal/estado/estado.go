@@ -373,33 +373,13 @@ func EfetivarItinerario(passageiroID string) error {
 		return falha(protocolo.StatusNaoEncontrado, "carrinho vazio ou o tempo da reserva expirou")
 	}
 
-	// 3. Cria o Itinerário Definitivo (os trechos do carrinho são cópias oficiais do servidor)
-	novoItinerario := modelos.Itinerario{
-		ID:           fmt.Sprintf("itin_%d", time.Now().UnixNano()),
-		PassageiroID: passageiroID,
-		Origem:       trechosEscolhidos[0].Origem,
-		Destino:      trechosEscolhidos[len(trechosEscolhidos)-1].Destino,
-		ValorTotal:   modelos.ValorTotal(trechosEscolhidos),
-		Trechos:      trechosEscolhidos,
-	}
-
-	// Confirma os trechos remotos nas empresas parceiras (Fase 2 do 2PC - Commit)
-	for _, t := range trechosEscolhidos {
-		if t.URL_Empresa != "" && t.URL_Empresa != MinhaURL {
-			if EfetivarReservaRemotaFunc != nil {
-				nome := nomeUsuario(passageiroID)
-				EfetivarReservaRemotaFunc(t.URL_Empresa, t.CaronaID, t.ID, passageiroID, nome)
-			}
-		}
-	}
-
-	// Trava todas as caronas locais da viagem de uma vez.
+	// 3. Trava todas as caronas locais da viagem de uma vez para validação prévia.
 	registros := travarCaronas(trechosEscolhidos)
 
 	caronaCancelada := false
 	for _, t := range trechosEscolhidos {
 		if t.URL_Empresa != "" && t.URL_Empresa != MinhaURL {
-			continue // Trecho remoto já foi confirmado com a empresa dona
+			continue // Trecho remoto
 		}
 		reg, existe := registros[t.CaronaID]
 		if !existe || reg.Cancelada {
@@ -408,32 +388,75 @@ func EfetivarItinerario(passageiroID string) error {
 		}
 	}
 
-	if !caronaCancelada {
-		// ATUALIZA O MOTORISTA: Coloca o passageiro na lista de embarque local
-		for _, tReq := range trechosEscolhidos {
-			if tReq.URL_Empresa != "" && tReq.URL_Empresa != MinhaURL {
-				continue
-			}
-			reg := registros[tReq.CaronaID]
-			for i, tOficial := range reg.Dados.Trechos {
-				if tOficial.ID == tReq.ID {
-					reg.Dados.Trechos[i].Passageiros = append(reg.Dados.Trechos[i].Passageiros, passageiroID)
-					break
-				}
-			}
-		}
-
-		// Salva no mapa global de viagens do sistema
-		Itinerarios.Store(novoItinerario.ID, novoItinerario)
-	}
-
-	destravarCaronas(registros)
-
 	if caronaCancelada {
-		// Um motorista cancelou enquanto o passageiro decidia: devolve as vagas dos outros
+		destravarCaronas(registros)
+		// Um motorista local cancelou enquanto o passageiro decidia: devolve as vagas dos outros
 		DesfazerReserva(trechosEscolhidos)
+		salvarCaronasEItinerarios()
 		return falha(protocolo.StatusConflito, "um dos motoristas cancelou a carona antes da confirmação; as vagas foram liberadas")
 	}
+
+	// 4. Confirma os trechos remotos nas empresas parceiras (Fase 2 do 2PC - Commit)
+	var trechosConfirmadosRemotos []modelos.Trecho
+	nome := nomeUsuario(passageiroID)
+
+	for _, t := range trechosEscolhidos {
+		if t.URL_Empresa != "" && t.URL_Empresa != MinhaURL {
+			if EfetivarReservaRemotaFunc != nil {
+				sucesso := EfetivarReservaRemotaFunc(t.URL_Empresa, t.CaronaID, t.ID, passageiroID, nome)
+				if !sucesso {
+					// FALHA DO 2PC: Servidor parceiro indisponível, timeout ou recusou commit!
+					// 4.1 Desfaz as reservas já efetivadas nos outros parceiros
+					for _, c := range trechosConfirmadosRemotos {
+						if CancelarReservaRemotaFunc != nil {
+							CancelarReservaRemotaFunc(c.URL_Empresa, c.CaronaID, c.ID, passageiroID, nome)
+						}
+					}
+					// 4.2 Destrava e devolve as vagas dos trechos locais e remotos
+					destravarCaronas(registros)
+					DesfazerReserva(trechosEscolhidos)
+					salvarCaronasEItinerarios()
+
+					// 4.3 Notifica o passageiro sobre a falha do servidor parceiro
+					notificar(passageiroID, "Sua compra foi cancelada porque o servidor responsável pelo trecho %s -> %s (%s) não está respondendo. As vagas foram liberadas.",
+						t.Origem, t.Destino, t.URL_Empresa)
+					salvarNotificacoes()
+
+					return falha(protocolo.StatusConflito,
+						"o servidor responsável pelo trecho %s -> %s (%s) não está respondendo; a compra foi cancelada e as vagas foram liberadas",
+						t.Origem, t.Destino, t.URL_Empresa)
+				}
+				trechosConfirmadosRemotos = append(trechosConfirmadosRemotos, t)
+			}
+		}
+	}
+
+	// 5. ATUALIZA O MOTORISTA LOCAL: Coloca o passageiro na lista de embarque local
+	for _, tReq := range trechosEscolhidos {
+		if tReq.URL_Empresa != "" && tReq.URL_Empresa != MinhaURL {
+			continue
+		}
+		reg := registros[tReq.CaronaID]
+		for i, tOficial := range reg.Dados.Trechos {
+			if tOficial.ID == tReq.ID {
+				reg.Dados.Trechos[i].Passageiros = append(reg.Dados.Trechos[i].Passageiros, passageiroID)
+				break
+			}
+		}
+	}
+
+	// 6. Cria e salva o Itinerário Definitivo
+	novoItinerario := modelos.Itinerario{
+		ID:           fmt.Sprintf("itin_%d", time.Now().UnixNano()),
+		PassageiroID: passageiroID,
+		Origem:       trechosEscolhidos[0].Origem,
+		Destino:      trechosEscolhidos[len(trechosEscolhidos)-1].Destino,
+		ValorTotal:   modelos.ValorTotal(trechosEscolhidos),
+		Trechos:      trechosEscolhidos,
+	}
+	Itinerarios.Store(novoItinerario.ID, novoItinerario)
+
+	destravarCaronas(registros)
 
 	// 7. PERSISTE TUDO NO DISCO (fora dos cadeados das caronas, senão dá deadlock)
 	salvarCaronasEItinerarios()

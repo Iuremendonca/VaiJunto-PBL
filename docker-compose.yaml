@@ -13,8 +13,8 @@ services:
     environment:
       - PORTA=8081
       - PORTA_REST=8082
-      - URL_EMPRESA=http://servidor-empresa-a:8082
-      - EMPRESAS_PARCEIRAS=http://servidor-empresa-b:9082,http://servidor-empresa-c:10082
+      - URL_EMPRESA=${URL_EMPRESA_A:-${URL_EMPRESA:-http://servidor-empresa-a:8082}}
+      - EMPRESAS_PARCEIRAS=${EMPRESAS_PARCEIRAS_A:-${EMPRESAS_PARCEIRAS:-http://servidor-empresa-b:9082,http://servidor-empresa-c:10082}}
       - ID_EMPRESA=empresa_a
       - VAIJUNTO_DADOS=/root/dados
       - TZ=America/Bahia
@@ -36,8 +36,8 @@ services:
     environment:
       - PORTA=9081
       - PORTA_REST=9082
-      - URL_EMPRESA=http://servidor-empresa-b:9082
-      - EMPRESAS_PARCEIRAS=http://servidor-empresa-a:8082,http://servidor-empresa-c:10082
+      - URL_EMPRESA=${URL_EMPRESA_B:-${URL_EMPRESA:-http://servidor-empresa-b:9082}}
+      - EMPRESAS_PARCEIRAS=${EMPRESAS_PARCEIRAS_B:-${EMPRESAS_PARCEIRAS:-http://servidor-empresa-a:8082,http://servidor-empresa-c:10082}}
       - ID_EMPRESA=empresa_b
       - VAIJUNTO_DADOS=/root/dados
       - TZ=America/Bahia
@@ -59,8 +59,8 @@ services:
     environment:
       - PORTA=10081
       - PORTA_REST=10082
-      - URL_EMPRESA=http://servidor-empresa-c:10082
-      - EMPRESAS_PARCEIRAS=http://servidor-empresa-a:8082,http://servidor-empresa-b:9082
+      - URL_EMPRESA=${URL_EMPRESA_C:-${URL_EMPRESA:-http://servidor-empresa-c:10082}}
+      - EMPRESAS_PARCEIRAS=${EMPRESAS_PARCEIRAS_C:-${EMPRESAS_PARCEIRAS:-http://servidor-empresa-a:8082,http://servidor-empresa-b:9082}}
       - ID_EMPRESA=empresa_c
       - VAIJUNTO_DADOS=/root/dados
       - TZ=America/Bahia

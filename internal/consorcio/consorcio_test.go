@@ -5,11 +5,13 @@ import (
 	"VaiJunto/internal/modelos"
 	"fmt"
 	"net"
+	"os"
 	"testing"
 	"time"
 )
 
 func TestComunicacaoEntreServidores(t *testing.T) {
+	os.Setenv("VAIJUNTO_DADOS", t.TempDir())
 	porta := "18082"
 	urlTeste := "http://127.0.0.1:" + porta
 	MinhaURL = urlTeste
