@@ -667,7 +667,6 @@ docker compose down
 ```
 
 #### Opção B: Localmente no Terminal (Sem Docker)
-Graças ao auto-reconhecimento de diretórios e portas padrão, basta abrir três abas de terminal:
 
 ```bash
 # Terminal 1 — Empresa A (TCP 8081 / REST 8082)
