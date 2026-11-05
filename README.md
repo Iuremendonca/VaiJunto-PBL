@@ -682,14 +682,3 @@ env PORTA=10081 PORTA_REST=10082 VAIJUNTO_DADOS=/tmp/srv_c ID_EMPRESA=empresa_c 
 
 ---
 
-### 13.8. Roteiro Passo a Passo para Demonstração do Barema
-
-| Etapa | Ação | Resultado Esperado |
-|---|---|---|
-| **1. Publicação Multi-Empresa** | Motorista publica em A (`FSA ➔ VDC`), em B (`VDC ➔ MOC`) e em C (`MOC ➔ Minas`). | As 3 empresas armazenam seus respectivos trechos em suas bases locais. |
-| **2. Scatter-Gather e BFS** | Passageiro no Servidor A busca `Feira de Santana ➔ Minas`. | O Servidor A consulta B e C via REST e monta a rota integrada de 3 baldeações. |
-| **3. Bloqueio no Carrinho** | Passageiro adiciona a rota no carrinho. | Servidor A envia *Prepare (2PC)* para B e C; as vagas de B e C diminuem de imediato no estoque. |
-| **4. Efetivação Atômica** | Passageiro confirma a compra. | Servidor A envia *Commit (2PC)*; os manifestos dos motoristas de A, B e C recebem o passageiro e os alertas são emitidos. |
-| **5. Injeção de Queda** | Derruba o Servidor C (`Ctrl+C`) e tenta comprar trecho que dependa de C. | O Servidor A detecta a indisponibilidade, cancela a compra, devolve as vagas locais e avisa o passageiro. |
-| **6. Cancelamento em Cascata** | Motorista de B cancela sua carona. | Servidor B avisa o Servidor A (`/api/caronas/cancelada`), o itinerário do passageiro é desfeito e a vaga de A é restaurada. |
-| **7. Cancelamento pelo Passageiro** | Passageiro cancela seu bilhete em A. | A vaga do Servidor B e C é restaurada e os motoristas recebem notificação no menu (`[1]`). |
