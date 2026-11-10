@@ -164,6 +164,37 @@ func LerData(leitor *bufio.Reader, pergunta string) string {
 	}
 }
 
+// Lê uma data no formato AAAA-MM-DD. Se o usuário teclar Enter (vazio), devolve o padrao.
+func LerDataComPadrao(leitor *bufio.Reader, pergunta, padrao string) string {
+	for {
+		fmt.Print(pergunta)
+		entrada := strings.TrimSpace(LerLinha(leitor))
+		if entrada == "" {
+			return padrao
+		}
+		if modelos.FormatoExato(modelos.FormatoData, entrada) {
+			return entrada
+		}
+		fmt.Printf("Formato inválido. Exemplo: 2026-09-20 (ou Enter para manter %s)\n", padrao)
+	}
+}
+
+// Lê um horário no formato HH:MM (ex: 08:30 ou 14:00)
+func LerHora(leitor *bufio.Reader, pergunta string) string {
+	for {
+		fmt.Print(pergunta)
+		entrada := strings.TrimSpace(LerLinha(leitor))
+		// Se digitou "8:30", normaliza automaticamente para "08:30"
+		if len(entrada) == 4 && entrada[1] == ':' {
+			entrada = "0" + entrada
+		}
+		if modelos.FormatoExato(modelos.FormatoHora, entrada) {
+			return entrada
+		}
+		fmt.Println("Formato de horário inválido. Exemplo: 08:30 ou 14:00")
+	}
+}
+
 // Pergunta S/N e devolve true se a resposta for S
 func Confirmar(leitor *bufio.Reader, pergunta string) bool {
 	fmt.Print(pergunta + " (S/N): ")

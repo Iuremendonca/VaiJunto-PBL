@@ -10,6 +10,7 @@ import (
 const (
 	FormatoDataHora = "2006-01-02 15:04"
 	FormatoData     = "2006-01-02"
+	FormatoHora     = "15:04"
 )
 
 // Limites de negócio (validados pelo servidor)
@@ -27,11 +28,12 @@ func FormatoExato(layout, valor string) bool {
 	return err == nil && t.Format(layout) == valor
 }
 
-// CidadesValidas contém as siglas aceitas para origem, paradas e destino (5 BA, 5 SE, 5 MG)
+// CidadesValidas contém as siglas aceitas para origem, paradas e destino
 var CidadesValidas = []string{
-	// Bahia (5)
+	// Bahia
 	"ssa", // Salvador
 	"fsa", // Feira de Santana
+	"sam", // Santo Amaro
 	"vdc", // Vitória da Conquista
 	"ala", // Alagoinhas
 	"esp", // Esplanada
@@ -56,6 +58,7 @@ var SiglaParaNome = map[string]string{
 	// Bahia
 	"ssa": "Salvador",
 	"fsa": "Feira de Santana",
+	"sam": "Santo Amaro",
 	"vdc": "Vitória da Conquista",
 	"ala": "Alagoinhas",
 	"esp": "Esplanada",

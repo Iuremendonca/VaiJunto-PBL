@@ -1,0 +1,16 @@
+{
+  "iure": [
+    {
+      "id": "not_1794281678036093148",
+      "data": "2026-11-10 00:34",
+      "mensagem": "carol confirmou uma vaga na sua carona: sam → teo (saída 2026-11-10 11:00).",
+      "lida": true
+    },
+    {
+      "id": "not_1794281710165854608",
+      "data": "2026-11-10 00:35",
+      "mensagem": "carol cancelou a reserva na sua carona: sam → teo (saída 2026-11-10 11:00). A vaga voltou a ficar disponível.",
+      "lida": true
+    }
+  ]
+}

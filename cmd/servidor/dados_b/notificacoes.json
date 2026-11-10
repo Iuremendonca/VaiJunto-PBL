@@ -1,0 +1,24 @@
+{
+  "carol": [
+    {
+      "id": "not_1794281710166508156",
+      "data": "2026-11-10 00:35",
+      "mensagem": "Sua viagem fsa → teo (saída 2026-11-10 08:00) foi cancelada porque o motorista deje cancelou a carona fsa → sam (saída 2026-11-10 08:00). As vagas de todos os trechos foram liberadas.",
+      "lida": true
+    }
+  ],
+  "deje": [
+    {
+      "id": "not_1794281678037658131",
+      "data": "2026-11-10 00:34",
+      "mensagem": "carol confirmou uma vaga na sua carona: fsa → sam (saída 2026-11-10 08:00).",
+      "lida": false
+    },
+    {
+      "id": "not_1794281897093982043",
+      "data": "2026-11-10 00:38",
+      "mensagem": "carol confirmou uma vaga na sua carona: fsa → teo (saída 2026-11-10 09:00).",
+      "lida": false
+    }
+  ]
+}

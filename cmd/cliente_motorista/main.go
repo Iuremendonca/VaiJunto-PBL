@@ -112,7 +112,11 @@ func publicarCarona(conn net.Conn, leitorTeclado, leitorRede *bufio.Reader) {
 		}
 		fmt.Println("O destino deve ser diferente da origem.")
 	}
-	c.DataHora = cli.LerDataHora(leitorTeclado, "Data e Hora de saida (AAAA-MM-DD HH:MM): ")
+
+	dataPartida := cli.LerData(leitorTeclado, "Data de saída (AAAA-MM-DD): ")
+	horaPartida := cli.LerHora(leitorTeclado, "Horário de saída (HH:MM): ")
+	c.DataHora = dataPartida + " " + horaPartida
+	dataPadrao := dataPartida
 
 	fmt.Printf("Capacidade do carro - máximo de passageiros (1 a %d): ", modelos.MaxAssentos)
 	c.Assentos = cli.LerNumero(leitorTeclado, 1, modelos.MaxAssentos)
@@ -152,8 +156,12 @@ func publicarCarona(conn net.Conn, leitorTeclado, leitorRede *bufio.Reader) {
 			t.VagasTotais = cli.LerNumeroComPadrao(leitorTeclado, 1, c.Assentos, c.Assentos)
 		}
 
-		t.HorarioChegada = cli.LerDataHora(leitorTeclado,
-			fmt.Sprintf("Horário previsto de chegada em %s (AAAA-MM-DD HH:MM): ", t.Destino))
+		dataChegada := cli.LerDataComPadrao(leitorTeclado,
+			fmt.Sprintf("Data de chegada em %s (AAAA-MM-DD, Enter = %s): ", t.Destino, dataPadrao), dataPadrao)
+		horaChegada := cli.LerHora(leitorTeclado,
+			fmt.Sprintf("Horário de chegada em %s (HH:MM): ", t.Destino))
+		t.HorarioChegada = dataChegada + " " + horaChegada
+		dataPadrao = dataChegada
 
 		// Adiciona o trecho na viagem
 		c.Trechos = append(c.Trechos, t)
@@ -170,8 +178,12 @@ func publicarCarona(conn net.Conn, leitorTeclado, leitorRede *bufio.Reader) {
 		}
 
 		origemAtual = t.Destino //atualiza a origem para o proximo trecho
-		saidaAtual = cli.LerDataHora(leitorTeclado,
-			fmt.Sprintf("Horário de saída de %s (AAAA-MM-DD HH:MM): ", origemAtual))
+		dataSaidaTrecho := cli.LerDataComPadrao(leitorTeclado,
+			fmt.Sprintf("Data de saída de %s (AAAA-MM-DD, Enter = %s): ", origemAtual, dataPadrao), dataPadrao)
+		horaSaidaTrecho := cli.LerHora(leitorTeclado,
+			fmt.Sprintf("Horário de saída de %s (HH:MM): ", origemAtual))
+		saidaAtual = dataSaidaTrecho + " " + horaSaidaTrecho
+		dataPadrao = dataSaidaTrecho
 	}
 
 	// O servidor valida tudo (encadeamento dos trechos, horários, valores) e responde

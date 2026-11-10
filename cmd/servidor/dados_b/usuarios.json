@@ -1,0 +1,14 @@
+{
+  "carol": {
+    "id": "carol",
+    "nome": "carol",
+    "tipo": "passageiro",
+    "senha": "1234"
+  },
+  "deje": {
+    "id": "deje",
+    "nome": "deje",
+    "tipo": "motorista",
+    "senha": "1234"
+  }
+}

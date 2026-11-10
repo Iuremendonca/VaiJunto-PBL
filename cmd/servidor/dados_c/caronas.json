@@ -1,1 +1,26 @@
-{}
+{
+  "carona_1794281061196802724": {
+    "id": "carona_1794281061196802724",
+    "motorista_id": "iure",
+    "origem": "sam",
+    "destino": "teo",
+    "data_hora": "2026-11-10 11:00",
+    "assentos": 2,
+    "trechos": [
+      {
+        "id": "tre_1794281061196807412_0",
+        "carona_id": "carona_1794281061196802724",
+        "motorista_id": "iure",
+        "origem": "sam",
+        "destino": "teo",
+        "valor": 20,
+        "vagas_totais": 2,
+        "vagas_livres": 2,
+        "passageiros": [],
+        "horario_saida": "2026-11-10 11:00",
+        "horario_chegada": "2026-11-10 13:00",
+        "url_empresa": ""
+      }
+    ]
+  }
+}
