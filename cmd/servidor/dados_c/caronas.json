@@ -22,5 +22,67 @@
         "url_empresa": ""
       }
     ]
+  },
+  "carona_1794311043393230573": {
+    "id": "carona_1794311043393230573",
+    "motorista_id": "iure",
+    "origem": "fsa",
+    "destino": "ssa",
+    "data_hora": "2026-11-10 14:00",
+    "assentos": 1,
+    "trechos": [
+      {
+        "id": "tre_1794311043393235156_0",
+        "carona_id": "carona_1794311043393230573",
+        "motorista_id": "iure",
+        "origem": "fsa",
+        "destino": "ala",
+        "valor": 34,
+        "vagas_totais": 1,
+        "vagas_livres": 1,
+        "passageiros": [],
+        "horario_saida": "2026-11-10 14:00",
+        "horario_chegada": "2026-11-10 15:00",
+        "url_empresa": ""
+      },
+      {
+        "id": "tre_1794311043393236895_1",
+        "carona_id": "carona_1794311043393230573",
+        "motorista_id": "iure",
+        "origem": "ala",
+        "destino": "ssa",
+        "valor": 45,
+        "vagas_totais": 1,
+        "vagas_livres": 1,
+        "passageiros": [],
+        "horario_saida": "2026-11-10 15:10",
+        "horario_chegada": "2026-11-10 16:00",
+        "url_empresa": ""
+      }
+    ]
+  },
+  "carona_1794312343343607771": {
+    "id": "carona_1794312343343607771",
+    "motorista_id": "iure",
+    "origem": "fsa",
+    "destino": "ssa",
+    "data_hora": "2026-11-10 14:00",
+    "assentos": 1,
+    "trechos": [
+      {
+        "id": "tre_1794312343343614794_0",
+        "carona_id": "carona_1794312343343607771",
+        "motorista_id": "iure",
+        "origem": "fsa",
+        "destino": "ssa",
+        "valor": 30,
+        "vagas_totais": 1,
+        "vagas_livres": 1,
+        "passageiros": [],
+        "horario_saida": "2026-11-10 14:00",
+        "horario_chegada": "2026-11-10 18:00",
+        "url_empresa": ""
+      }
+    ]
   }
 }

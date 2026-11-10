@@ -72,6 +72,9 @@ func IniciarAPI(porta string) {
 	mux.HandleFunc("/api/reservas/cancelar", handleCancelar)
 	mux.HandleFunc("/api/caronas/cancelada", handleCaronaCancelada)
 
+	// Inicia o worker de recuperação e retentativa em background (garante entrega de cancelamentos)
+	go IniciarWorkerRetentativas()
+
 	fmt.Printf("[REST] Servidor do Consórcio rodando na porta %s (URL pública: %s | Parceiros: %v)\n",
 		porta, MinhaURL, Parceiros)
 	if err := http.ListenAndServe(":"+porta, mux); err != nil {

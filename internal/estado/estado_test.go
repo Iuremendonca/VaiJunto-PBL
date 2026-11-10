@@ -459,6 +459,27 @@ func TestReconciliarEstado(t *testing.T) {
 	}
 }
 
+func TestReconciliarEstadoComPassageiroRemoto(t *testing.T) {
+	limpar()
+	c1 := publicarRota(t, "m1", 3, perna{"Feira de Santana", "Salvador", h(0, "08:00"), h(0, "10:00"), 10})
+
+	// Efetiva vaga remota (como ocorre na Fase 2 do 2PC)
+	if !EfetivarVaga(c1.ID, c1.Trechos[0].ID, "passageiro_remoto_servidor_a", "Passageiro A") {
+		t.Fatal("falha ao efetivar vaga remota")
+	}
+
+	// Simula queda e reinício do servidor (execução de ReconciliarEstado)
+	ReconciliarEstado()
+
+	tr := trecho(c1.ID)
+	if tr.VagasLivres != 2 {
+		t.Fatalf("esperava 2 vagas livres, obteve %d", tr.VagasLivres)
+	}
+	if len(tr.Passageiros) != 1 || tr.Passageiros[0] != "passageiro_remoto_servidor_a" {
+		t.Fatalf("passageiro remoto não sobreviveu ao reinício: %+v", tr.Passageiros)
+	}
+}
+
 // Estresse: compras (com baldeação), cancelamentos de passageiros e de motoristas ao mesmo tempo.
 func TestEstresseConcorrente(t *testing.T) {
 	limpar()

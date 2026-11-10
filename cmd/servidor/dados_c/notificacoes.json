@@ -11,6 +11,48 @@
       "data": "2026-11-10 00:35",
       "mensagem": "carol cancelou a reserva na sua carona: sam → teo (saída 2026-11-10 11:00). A vaga voltou a ficar disponível.",
       "lida": true
+    },
+    {
+      "id": "not_1794311570864237911",
+      "data": "2026-11-10 08:52",
+      "mensagem": "carol confirmou uma vaga na sua carona: ala → ssa (saída 2026-11-10 15:10).",
+      "lida": true
+    },
+    {
+      "id": "not_1794312214434013764",
+      "data": "2026-11-10 09:03",
+      "mensagem": "yanne confirmou uma vaga na sua carona: ala → ssa (saída 2026-11-10 15:10).",
+      "lida": true
+    },
+    {
+      "id": "not_1794312918334794911",
+      "data": "2026-11-10 09:15",
+      "mensagem": "yanne confirmou uma vaga na sua carona: ala → ssa (saída 2026-11-10 15:10).",
+      "lida": true
+    },
+    {
+      "id": "not_1794313395621793460",
+      "data": "2026-11-10 09:23",
+      "mensagem": "yanne confirmou uma vaga na sua carona: ala → ssa (saída 2026-11-10 15:10).",
+      "lida": true
+    },
+    {
+      "id": "not_1794313650312296045",
+      "data": "2026-11-10 09:27",
+      "mensagem": "yanne cancelou a reserva na sua carona: ala → ssa (saída 2026-11-10 15:10). A vaga voltou a ficar disponível.",
+      "lida": true
+    },
+    {
+      "id": "not_1794313860269479407",
+      "data": "2026-11-10 09:31",
+      "mensagem": "yanne cancelou a reserva na sua carona: ala → ssa (saída 2026-11-10 15:10). A vaga voltou a ficar disponível.",
+      "lida": true
+    },
+    {
+      "id": "not_1794313860296589175",
+      "data": "2026-11-10 09:31",
+      "mensagem": "yanne cancelou a reserva na sua carona: ala → ssa (saída 2026-11-10 15:10). A vaga voltou a ficar disponível.",
+      "lida": true
     }
   ]
 }

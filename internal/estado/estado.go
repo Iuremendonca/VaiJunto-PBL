@@ -1206,7 +1206,8 @@ func CancelarVaga(caronaID, trechoID string, extras ...string) bool {
 	}
 
 	chave := caronaID + "#" + trechoID
-	if val, ok := reservasPendentesRemotas.LoadAndDelete(chave); ok {
+	val, eraPendente := reservasPendentesRemotas.LoadAndDelete(chave)
+	if eraPendente {
 		val.(*ReservaPendenteRemota).Timer.Stop()
 	}
 
@@ -1220,18 +1221,40 @@ func CancelarVaga(caronaID, trechoID string, extras ...string) bool {
 
 	for i, t := range reg.Dados.Trechos {
 		if t.ID == trechoID {
-			reg.Dados.Trechos[i].VagasLivres++
+			devolveu := false
+			if eraPendente {
+				reg.Dados.Trechos[i].VagasLivres++
+				devolveu = true
+			}
 			if passID != "" {
-				reg.Dados.Trechos[i].Passageiros = removerPassageiro(reg.Dados.Trechos[i].Passageiros, passID)
-				nomeExibir := passID
-				if passNome != "" {
-					nomeExibir = passNome
-				} else if n := nomeUsuario(passID); n != "" {
-					nomeExibir = n
+				itinID := fmt.Sprintf("itin_remoto_%s_%s_%s", caronaID, trechoID, passID)
+				Itinerarios.Delete(itinID)
+
+				estavaNaLista := false
+				for _, p := range reg.Dados.Trechos[i].Passageiros {
+					if p == passID {
+						estavaNaLista = true
+						break
+					}
 				}
-				notificar(reg.Dados.MotoristaID, "%s cancelou a reserva na sua carona: %s. A vaga voltou a ficar disponível.",
-					nomeExibir, descreverTrechos([]modelos.Trecho{t}))
-				salvarNotificacoes()
+				if estavaNaLista {
+					reg.Dados.Trechos[i].Passageiros = removerPassageiro(reg.Dados.Trechos[i].Passageiros, passID)
+					if !devolveu {
+						reg.Dados.Trechos[i].VagasLivres++
+						devolveu = true
+					}
+					nomeExibir := passID
+					if passNome != "" {
+						nomeExibir = passNome
+					} else if n := nomeUsuario(passID); n != "" {
+						nomeExibir = n
+					}
+					notificar(reg.Dados.MotoristaID, "%s cancelou a reserva na sua carona: %s. A vaga voltou a ficar disponível.",
+						nomeExibir, descreverTrechos([]modelos.Trecho{t}))
+					salvarNotificacoes()
+				}
+			} else if !devolveu {
+				reg.Dados.Trechos[i].VagasLivres++
 			}
 			go salvarCaronasEItinerarios()
 			return true
@@ -1275,6 +1298,18 @@ func EfetivarVaga(caronaID, trechoID, passageiroID string, extras ...string) boo
 			}
 			reg.Dados.Trechos[i].Passageiros = append(reg.Dados.Trechos[i].Passageiros, passageiroID)
 			achou = true
+
+			// Garante que o servidor parceiro persista o registro do itinerário
+			// para que ReconciliarEstado não descarte o passageiro em caso de reinício
+			itinID := fmt.Sprintf("itin_remoto_%s_%s_%s", caronaID, trechoID, passageiroID)
+			Itinerarios.Store(itinID, modelos.Itinerario{
+				ID:           itinID,
+				PassageiroID: passageiroID,
+				Origem:       t.Origem,
+				Destino:      t.Destino,
+				ValorTotal:   t.Valor,
+				Trechos:      []modelos.Trecho{reg.Dados.Trechos[i]},
+			})
 
 			nomeExibir := passageiroID
 			if passNome != "" {

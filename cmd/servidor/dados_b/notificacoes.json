@@ -5,6 +5,12 @@
       "data": "2026-11-10 00:35",
       "mensagem": "Sua viagem fsa → teo (saída 2026-11-10 08:00) foi cancelada porque o motorista deje cancelou a carona fsa → sam (saída 2026-11-10 08:00). As vagas de todos os trechos foram liberadas.",
       "lida": true
+    },
+    {
+      "id": "not_1794310526762748491",
+      "data": "2026-11-10 08:35",
+      "mensagem": "Sua viagem fsa → teo (saída 2026-11-10 09:00) foi cancelada porque o motorista deje cancelou a carona.",
+      "lida": true
     }
   ],
   "deje": [
@@ -12,12 +18,44 @@
       "id": "not_1794281678037658131",
       "data": "2026-11-10 00:34",
       "mensagem": "carol confirmou uma vaga na sua carona: fsa → sam (saída 2026-11-10 08:00).",
-      "lida": false
+      "lida": true
     },
     {
       "id": "not_1794281897093982043",
       "data": "2026-11-10 00:38",
       "mensagem": "carol confirmou uma vaga na sua carona: fsa → teo (saída 2026-11-10 09:00).",
+      "lida": true
+    },
+    {
+      "id": "not_1794311570866266247",
+      "data": "2026-11-10 08:52",
+      "mensagem": "carol confirmou uma vaga na sua carona: ssa → ara (saída 2026-11-10 16:10).",
+      "lida": true
+    },
+    {
+      "id": "not_1794312214453650412",
+      "data": "2026-11-10 09:03",
+      "mensagem": "yanne confirmou uma vaga na sua carona: ssa → ara (saída 2026-11-10 16:10).",
+      "lida": true
+    },
+    {
+      "id": "not_1794312918398603769",
+      "data": "2026-11-10 09:15",
+      "mensagem": "yanne confirmou uma vaga na sua carona: ssa → ara (saída 2026-11-10 16:10).",
+      "lida": true
+    },
+    {
+      "id": "not_1794313395649541211",
+      "data": "2026-11-10 09:23",
+      "mensagem": "yanne confirmou uma vaga na sua carona: ssa → ara (saída 2026-11-10 16:10).",
+      "lida": true
+    }
+  ],
+  "yanne": [
+    {
+      "id": "not_1794313860247622537",
+      "data": "2026-11-10 09:31",
+      "mensagem": "Sua viagem ssa → ara (saída 2026-11-10 16:10) foi cancelada porque o motorista deje cancelou a carona.",
       "lida": false
     }
   ]

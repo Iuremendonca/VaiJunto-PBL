@@ -7,7 +7,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -167,7 +170,119 @@ func CancelarReservaRemotaPorID(urlEmpresa, caronaID, trechoID string, extras ..
 		urlEmpresa, caronaID, trechoID, passID, passNome)
 	ok := dispararPOST(endpoint, payload)
 	fmt.Printf("[CLIENTE-REST 2PC] Resposta Rollback de %s: sucesso=%v\n", urlEmpresa, ok)
+	if !ok {
+		fmt.Printf("[RECUPERAÇÃO DISTRIBUÍDA] Parceiro %s está inacessível. Enfileirando cancelamento para entrega garantida...\n", urlEmpresa)
+		EnfileirarCancelamentoPendente(CancelamentoPendente{
+			URLEmpresa:     urlEmpresa,
+			CaronaID:       caronaID,
+			TrechoID:       trechoID,
+			PassageiroID:   passID,
+			PassageiroNome: passNome,
+		})
+	}
 	return ok
+}
+
+// CancelamentoPendente armazena uma solicitação de cancelamento que falhou por queda do parceiro
+type CancelamentoPendente struct {
+	URLEmpresa     string `json:"url_empresa"`
+	CaronaID       string `json:"carona_id"`
+	TrechoID       string `json:"trecho_id"`
+	PassageiroID   string `json:"passageiro_id"`
+	PassageiroNome string `json:"passageiro_nome"`
+}
+
+var (
+	cancelamentosPendentesMu sync.Mutex
+	cancelamentosPendentes   []CancelamentoPendente
+)
+
+func caminhoArquivoCancelamentos() string {
+	pasta := os.Getenv("VAIJUNTO_DADOS")
+	if pasta == "" {
+		pasta = "."
+	}
+	return filepath.Join(pasta, "cancelamentos_pendentes.json")
+}
+
+func carregarCancelamentosPendentes() {
+	cancelamentosPendentesMu.Lock()
+	defer cancelamentosPendentesMu.Unlock()
+
+	caminho := caminhoArquivoCancelamentos()
+	dados, err := os.ReadFile(caminho)
+	if err != nil {
+		return
+	}
+	_ = json.Unmarshal(dados, &cancelamentosPendentes)
+}
+
+func salvarCancelamentosPendentes() {
+	caminho := caminhoArquivoCancelamentos()
+	dados, err := json.MarshalIndent(cancelamentosPendentes, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(caminho, dados, 0644)
+}
+
+// EnfileirarCancelamentoPendente adiciona à fila quando o parceiro estiver inacessível
+func EnfileirarCancelamentoPendente(p CancelamentoPendente) {
+	cancelamentosPendentesMu.Lock()
+	defer cancelamentosPendentesMu.Unlock()
+
+	for _, item := range cancelamentosPendentes {
+		if item.URLEmpresa == p.URLEmpresa && item.CaronaID == p.CaronaID && item.TrechoID == p.TrechoID && item.PassageiroID == p.PassageiroID {
+			return
+		}
+	}
+	cancelamentosPendentes = append(cancelamentosPendentes, p)
+	salvarCancelamentosPendentes()
+}
+
+// IniciarWorkerRetentativas executa em background tentando entregar cancelamentos acumulados
+func IniciarWorkerRetentativas() {
+	carregarCancelamentosPendentes()
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		cancelamentosPendentesMu.Lock()
+		if len(cancelamentosPendentes) == 0 {
+			cancelamentosPendentesMu.Unlock()
+			continue
+		}
+		lista := make([]CancelamentoPendente, len(cancelamentosPendentes))
+		copy(lista, cancelamentosPendentes)
+		cancelamentosPendentesMu.Unlock()
+
+		var restantes []CancelamentoPendente
+		alterou := false
+
+		for _, item := range lista {
+			endpoint := strings.TrimRight(item.URLEmpresa, "/") + "/api/reservas/cancelar"
+			payload := PedidoReserva{
+				CaronaID:       item.CaronaID,
+				TrechoID:       item.TrechoID,
+				PassageiroID:   item.PassageiroID,
+				PassageiroNome: item.PassageiroNome,
+			}
+			if dispararPOST(endpoint, payload) {
+				fmt.Printf("[RECUPERAÇÃO DISTRIBUÍDA] Sucesso! Servidor parceiro %s voltou online e o cancelamento (Carona %s, Trecho %s) foi entregue!\n",
+					item.URLEmpresa, item.CaronaID, item.TrechoID)
+				alterou = true
+			} else {
+				restantes = append(restantes, item)
+			}
+		}
+
+		if alterou {
+			cancelamentosPendentesMu.Lock()
+			cancelamentosPendentes = restantes
+			salvarCancelamentosPendentes()
+			cancelamentosPendentesMu.Unlock()
+		}
+	}
 }
 
 // NotificarCancelamentoCaronaRemota avisa as empresas parceiras que uma carona foi cancelada pelo motorista (cascata)
