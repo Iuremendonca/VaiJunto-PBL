@@ -1,0 +1,22 @@
+{
+  "iure": [
+    {
+      "id": "not_1794272002505911918",
+      "data": "2026-11-09 21:53",
+      "mensagem": "yanne confirmou uma vaga na sua carona: fsa → vdc (saída 2026-11-10 08:00).",
+      "lida": true
+    },
+    {
+      "id": "not_1794272256708879761",
+      "data": "2026-11-09 21:57",
+      "mensagem": "yanne cancelou a reserva na sua carona: fsa → vdc (saída 2026-11-10 08:00). A vaga voltou a ficar disponível.",
+      "lida": true
+    },
+    {
+      "id": "not_1794272442452911575",
+      "data": "2026-11-09 22:00",
+      "mensagem": "yanne confirmou uma vaga na sua carona: fsa → ssa (saída 2026-11-10 08:00).",
+      "lida": true
+    }
+  ]
+}

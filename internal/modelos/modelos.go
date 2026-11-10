@@ -1,6 +1,7 @@
 package modelos
 
 import (
+	"fmt"
 	"strings"
 	"time"
 )
@@ -26,23 +27,92 @@ func FormatoExato(layout, valor string) bool {
 	return err == nil && t.Format(layout) == valor
 }
 
+// CidadesValidas contém as siglas aceitas para origem, paradas e destino (5 BA, 5 SE, 5 MG)
 var CidadesValidas = []string{
-	"Feira de Santana",
-	"Salvador",
-	"Santo Amaro",
-	"Alagoinhas",
-	"Aracaju",
-	"Esplanada",
-	"Vitória da Conquista",
-	"Montes Claros",
-	"Minas",
+	// Bahia (5)
+	"ssa", // Salvador
+	"fsa", // Feira de Santana
+	"vdc", // Vitória da Conquista
+	"ala", // Alagoinhas
+	"esp", // Esplanada
+
+	// Sergipe (5)
+	"ara", // Aracaju
+	"est", // Estância
+	"iba", // Itabaiana
+	"lag", // Lagarto
+	"prp", // Propriá
+
+	// Minas Gerais (5)
+	"bh",  // Belo Horizonte
+	"moc", // Montes Claros
+	"gva", // Governador Valadares
+	"teo", // Teófilo Otoni
+	"udi", // Uberlândia
 }
 
-// Devolve o nome oficial da cidade (ignorando maiúsculas e espaços) e se ela é atendida
+// SiglaParaNome mapeia as siglas para os nomes completos das cidades
+var SiglaParaNome = map[string]string{
+	// Bahia
+	"ssa": "Salvador",
+	"fsa": "Feira de Santana",
+	"vdc": "Vitória da Conquista",
+	"ala": "Alagoinhas",
+	"esp": "Esplanada",
+
+	// Sergipe
+	"ara": "Aracaju",
+	"est": "Estância",
+	"iba": "Itabaiana",
+	"lag": "Lagarto",
+	"prp": "Propriá",
+
+	// Minas Gerais
+	"bh":  "Belo Horizonte",
+	"moc": "Montes Claros",
+	"gva": "Governador Valadares",
+	"teo": "Teófilo Otoni",
+	"udi": "Uberlândia",
+}
+
+// TextoCidadesAtendidas formata a lista de cidades com suas siglas para exibição nos clientes
+func TextoCidadesAtendidas() string {
+	var partes []string
+	for _, sigla := range CidadesValidas {
+		if nome, ok := SiglaParaNome[sigla]; ok {
+			partes = append(partes, fmt.Sprintf("%s (%s)", sigla, nome))
+		} else {
+			partes = append(partes, sigla)
+		}
+	}
+	return strings.Join(partes, ", ")
+}
+
+// NormalizarCidade valida a cidade.
+// Aceita tanto a sigla (ex: "fsa", "bh", "esp", "ara") quanto o nome por extenso (para compatibilidade).
 func NormalizarCidade(cidade string) (string, bool) {
-	for _, c := range CidadesValidas {
-		if strings.EqualFold(strings.TrimSpace(cidade), c) {
-			return c, true
+	cidade = strings.TrimSpace(cidade)
+	if cidade == "" {
+		return "", false
+	}
+	cidadeLower := strings.ToLower(cidade)
+	// 1. Validação direta por sigla (fsa, ssa, ara, esp, bh...)
+	for _, sigla := range CidadesValidas {
+		if cidadeLower == sigla {
+			return sigla, true
+		}
+	}
+	// 2. Se o usuário ou testes digitarem o nome completo por extenso, aceita também
+	for _, nome := range SiglaParaNome {
+		if strings.EqualFold(cidade, nome) {
+			return nome, true
+		}
+	}
+	// 3. Compatibilidade com nomes legados de testes anteriores
+	nomesLegados := []string{"Minas", "Santo Amaro"}
+	for _, nome := range nomesLegados {
+		if strings.EqualFold(cidade, nome) {
+			return nome, true
 		}
 	}
 	return "", false

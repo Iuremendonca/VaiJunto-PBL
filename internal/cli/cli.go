@@ -136,7 +136,7 @@ func LerCidade(leitor *bufio.Reader, pergunta string) string {
 		if cidade, ok := modelos.NormalizarCidade(LerLinha(leitor)); ok {
 			return cidade
 		}
-		fmt.Printf("Cidade não atendida. Opções: %s\n", strings.Join(modelos.CidadesValidas, ", "))
+		fmt.Printf("Cidade não atendida. Use uma das siglas: %s\n", strings.Join(modelos.CidadesValidas, ", "))
 	}
 }
 

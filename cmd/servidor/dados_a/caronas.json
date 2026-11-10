@@ -1,0 +1,66 @@
+{
+  "carona_1794271946872246699": {
+    "id": "carona_1794271946872246699",
+    "motorista_id": "iure",
+    "origem": "fsa",
+    "destino": "vdc",
+    "data_hora": "2026-11-10 08:00",
+    "assentos": 3,
+    "trechos": [
+      {
+        "id": "tre_1794271946872254298_0",
+        "carona_id": "carona_1794271946872246699",
+        "motorista_id": "iure",
+        "origem": "fsa",
+        "destino": "vdc",
+        "valor": 50,
+        "vagas_totais": 3,
+        "vagas_livres": 3,
+        "passageiros": [],
+        "horario_saida": "2026-11-10 08:00",
+        "horario_chegada": "2026-11-10 14:00",
+        "url_empresa": ""
+      }
+    ]
+  },
+  "carona_1794272370575738017": {
+    "id": "carona_1794272370575738017",
+    "motorista_id": "iure",
+    "origem": "fsa",
+    "destino": "ilr",
+    "data_hora": "2026-11-10 08:00",
+    "assentos": 2,
+    "trechos": [
+      {
+        "id": "tre_1794272370575743103_0",
+        "carona_id": "carona_1794272370575738017",
+        "motorista_id": "iure",
+        "origem": "fsa",
+        "destino": "ssa",
+        "valor": 20,
+        "vagas_totais": 2,
+        "vagas_livres": 1,
+        "passageiros": [
+          "yanne"
+        ],
+        "horario_saida": "2026-11-10 08:00",
+        "horario_chegada": "2026-11-10 12:00",
+        "url_empresa": ""
+      },
+      {
+        "id": "tre_1794272370575744249_1",
+        "carona_id": "carona_1794272370575738017",
+        "motorista_id": "iure",
+        "origem": "ssa",
+        "destino": "ilr",
+        "valor": 25,
+        "vagas_totais": 2,
+        "vagas_livres": 2,
+        "passageiros": [],
+        "horario_saida": "2026-11-10 12:30",
+        "horario_chegada": "2026-11-10 15:00",
+        "url_empresa": ""
+      }
+    ]
+  }
+}

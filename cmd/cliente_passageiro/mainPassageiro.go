@@ -137,7 +137,7 @@ func agruparPorPrimeiroCarro(itinerarios [][]modelos.Trecho) []opcaoTrecho {
 func iniciarBuscaPassagem(conn net.Conn, leitor, leitorRede *bufio.Reader) {
 
 	fmt.Println("\n=== BUSCAR PASSAGENS ===")
-	fmt.Printf("Cidades atendidas: %s\n", strings.Join(modelos.CidadesValidas, ", "))
+	fmt.Printf("Cidades atendidas (use as siglas): %s\n", modelos.TextoCidadesAtendidas())
 	origem := cli.LerCidade(leitor, "Origem: ")
 	var destino string
 	for {

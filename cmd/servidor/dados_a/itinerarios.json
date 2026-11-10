@@ -1,0 +1,25 @@
+{
+  "itin_1794272442452155375": {
+    "id": "itin_1794272442452155375",
+    "passageiro_id": "yanne",
+    "origem": "fsa",
+    "destino": "ssa",
+    "valor_total": 20,
+    "trechos": [
+      {
+        "id": "tre_1794272370575743103_0",
+        "carona_id": "carona_1794272370575738017",
+        "motorista_id": "iure",
+        "origem": "fsa",
+        "destino": "ssa",
+        "valor": 20,
+        "vagas_totais": 2,
+        "vagas_livres": 1,
+        "passageiros": null,
+        "horario_saida": "2026-11-10 08:00",
+        "horario_chegada": "2026-11-10 12:00",
+        "url_empresa": "http://servidor-empresa-a:8082"
+      }
+    ]
+  }
+}

@@ -102,7 +102,7 @@ func menuMotorista(conn net.Conn, leitorTeclado, leitorRede *bufio.Reader, usuar
 func publicarCarona(conn net.Conn, leitorTeclado, leitorRede *bufio.Reader) {
 	var c modelos.Carona
 	fmt.Println("\n=== CADASTRAR NOVA VIAGEM ===")
-	fmt.Printf("Cidades atendidas: %s\n", strings.Join(modelos.CidadesValidas, ", "))
+	fmt.Printf("Cidades atendidas (use as siglas): %s\n", modelos.TextoCidadesAtendidas())
 
 	c.Origem = cli.LerCidade(leitorTeclado, "Origem: ")
 	for {
